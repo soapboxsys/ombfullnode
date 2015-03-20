@@ -1381,7 +1381,7 @@ func newBlockManager(s *server) (*blockManager, error) {
 	bm.updateChainState(newestHash, height)
 
 	// Initialize the PubRecManager to send relevant blks and messages to Konos
-	precMgr := newPubRecManager(s.netParams)
+	precMgr := newPubRecManager(s.chainParams)
 	go precMgr.Start()
 
 	bm.precMgr = precMgr

@@ -1,24 +1,21 @@
 package main
 
 import (
-	"github.com/NSkelsey/ahimsadb"
-	"github.com/NSkelsey/btcsubprotos"
-	"github.com/NSkelsey/protocol/ahimsa"
-	"github.com/conformal/btcnet"
-	"github.com/conformal/btcutil"
-	"github.com/conformal/btcwire"
+	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcutil"
+	"github.com/soapboxsys/ombudslib/protocol/ombproto"
+	"github.com/soapboxsys/ombudslib/pubrecdb"
 )
 
 type PubRecManager struct {
 	txChan    chan *btcutil.Tx
 	blkChan   chan *btcutil.Block
-	netParams *btcnet.Params
-	db        *ahimsadb.PublicRecord
+	netParams *chaincfg.Params
+	db        *pubrecdb.PublicRecord
 }
 
 func (m *PubRecManager) handleBlockPush(blk *btcutil.Block) {
-
-	hash, _ := blk.Sha()
 
 	// Store block in the database
 	if err := m.db.StoreBlock(blk); err != nil {
@@ -26,17 +23,18 @@ func (m *PubRecManager) handleBlockPush(blk *btcutil.Block) {
 	}
 }
 
-// Hand
+// handleTxPush takes a transaction and stores the bulletin contained within in
+// the PubRecManager's database.
 func (m *PubRecManager) handleTxPush(tx *btcutil.Tx, blk *btcutil.Block) {
 
-	if btcsubprotos.IsBulletin(tx.MsgTx()) {
-		var blkSha *btcwire.ShaHash
+	if ombproto.IsBulletin(tx.MsgTx()) {
+		var blkSha *wire.ShaHash
 		if blk != nil {
 			blkSha, _ = blk.Sha()
 		}
 
 		precLog.Info("Storing bltn ", tx.Sha())
-		bltn, err := ahimsa.NewBulletin(tx.MsgTx(), blkSha, m.netParams)
+		bltn, err := ombproto.NewBulletin(tx.MsgTx(), blkSha, m.netParams)
 		if err != nil {
 			precLog.Errorf("Could create bulletin from tx: %s", err)
 		}
@@ -47,13 +45,14 @@ func (m *PubRecManager) handleTxPush(tx *btcutil.Tx, blk *btcutil.Block) {
 	}
 }
 
-func newPubRecManager(net *btcnet.Params) *PubRecManager {
+func newPubRecManager(net *chaincfg.Params) *PubRecManager {
 
-	var db *ahimsadb.PublicRecord
+	var db *pubrecdb.PublicRecord
 	var err error
-	db, err = ahimsadb.LoadDB("./pubrecord.db")
+	// TODO resolve path
+	db, err = pubrecdb.LoadDB("./pubrecord.db")
 	if err != nil {
-		db, err = ahimsadb.InitDB("./pubrecord.db")
+		db, err = pubrecdb.InitDB("./pubrecord.db")
 		if err != nil {
 			precLog.Errorf("Failed to Init db! %s", err)
 		}
@@ -68,10 +67,10 @@ func newPubRecManager(net *btcnet.Params) *PubRecManager {
 	}
 }
 
-// Must be run as a seperate goroutine
+// The PublicRecordManager must be started as a separate go routine.
 func (m *PubRecManager) Start() {
 
-	precLog.Info("Starting pubrecord db manager")
+	precLog.Info("Starting PubRecord db Manager.")
 	for {
 		select {
 		case tx := <-m.txChan:
