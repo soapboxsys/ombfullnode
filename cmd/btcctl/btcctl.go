@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/btcsuite/btcd/btcjson/v2/btcjson"
+	_ "github.com/soapboxsys/ombudslib/rpcexten"
 )
 
 const (
