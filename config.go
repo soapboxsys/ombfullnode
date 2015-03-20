@@ -55,8 +55,8 @@ var (
 	defaultRPCKeyFile  = filepath.Join(btcdHomeDir, "rpc.key")
 	defaultRPCCertFile = filepath.Join(btcdHomeDir, "rpc.cert")
 	defaultLogDir      = filepath.Join(btcdHomeDir, defaultLogDirname)
-	// TODO NOTICE Not settable
-	defaultDBPath = filepath.Join(btcdHomeDir, "pubrecord.db")
+	// TODO NOTICE
+	defaultPubRecFile = filepath.Join(btcdHomeDir, "pubrecord.db")
 )
 
 // runServiceCommand is only set to a real function on Windows.  It is used
@@ -67,6 +67,9 @@ var runServiceCommand func(string) error
 //
 // See loadConfig for details on the configuration load process.
 type config struct {
+	// TODO NOTICE
+	PubRecFile string `long:"pubrecfile" description:"The path to the public record sqlite database."`
+
 	ShowVersion        bool          `short:"V" long:"version" description:"Display version information and exit"`
 	ConfigFile         string        `short:"C" long:"configfile" description:"Path to configuration file"`
 	DataDir            string        `short:"b" long:"datadir" description:"Directory to store data"`
@@ -304,6 +307,9 @@ func newConfigParser(cfg *config, so *serviceOptions, options flags.Options) *fl
 func loadConfig() (*config, []string, error) {
 	// Default config.
 	cfg := config{
+		//TODO NOTICE
+		PubRecFile: defaultPubRecFile,
+
 		ConfigFile:        defaultConfigFile,
 		DebugLevel:        defaultLogLevel,
 		MaxPeers:          defaultMaxPeers,
