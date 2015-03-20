@@ -49,10 +49,11 @@ func newPubRecManager(net *chaincfg.Params) *PubRecManager {
 
 	var db *pubrecdb.PublicRecord
 	var err error
+
 	// TODO resolve path
-	db, err = pubrecdb.LoadDB("./pubrecord.db")
+	db, err = pubrecdb.LoadDB(defaultDBPath)
 	if err != nil {
-		db, err = pubrecdb.InitDB("./pubrecord.db")
+		db, err = pubrecdb.InitDB(defaultDBPath)
 		if err != nil {
 			precLog.Errorf("Failed to Init db! %s", err)
 		}

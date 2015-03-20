@@ -55,6 +55,8 @@ var (
 	defaultRPCKeyFile  = filepath.Join(btcdHomeDir, "rpc.key")
 	defaultRPCCertFile = filepath.Join(btcdHomeDir, "rpc.cert")
 	defaultLogDir      = filepath.Join(btcdHomeDir, defaultLogDirname)
+	// TODO NOTICE Not settable
+	defaultDBPath = filepath.Join(btcdHomeDir, "pubrecord.db")
 )
 
 // runServiceCommand is only set to a real function on Windows.  It is used
