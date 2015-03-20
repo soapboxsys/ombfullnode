@@ -52,6 +52,9 @@ var (
 	scrpLog    = btclog.Disabled
 	srvrLog    = btclog.Disabled
 	txmpLog    = btclog.Disabled
+
+	// Extra logging for pub record
+	precLog = btclog.Disabled
 )
 
 // subsystemLoggers maps each subsystem identifier to its associated logger.
@@ -69,6 +72,9 @@ var subsystemLoggers = map[string]btclog.Logger{
 	"SCRP": scrpLog,
 	"SRVR": srvrLog,
 	"TXMP": txmpLog,
+
+	// Extra logging for pub record
+	"PREC": txmpLog,
 }
 
 // logClosure is used to provide a closure over expensive logging operations
@@ -138,6 +144,10 @@ func useLogger(subsystemID string, logger btclog.Logger) {
 
 	case "TXMP":
 		txmpLog = logger
+
+	// Extra logging for pub record
+	case "PREC":
+		precLog = logger
 	}
 }
 
