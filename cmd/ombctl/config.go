@@ -24,9 +24,10 @@ const (
 )
 
 var (
-	btcdHomeDir           = btcutil.AppDataDir("ombfullnode", false)
-	btcctlHomeDir         = btcutil.AppDataDir("ombctl", false)
-	btcwalletHomeDir      = btcutil.AppDataDir("ombwallet", false)
+	ombudsCoreHome        = btcutil.AppDataDir("ombudscore", false)
+	btcdHomeDir           = filepath.Join(ombudsCoreHome, "node")
+	btcctlHomeDir         = filepath.Join(ombudsCoreHome, "ombctl")
+	btcwalletHomeDir      = filepath.Join(ombudsCoreHome, "wallet")
 	defaultConfigFile     = filepath.Join(btcctlHomeDir, "ombctl.conf")
 	defaultRPCServer      = "localhost"
 	defaultRPCCertFile    = filepath.Join(btcdHomeDir, "rpc.cert")

@@ -27,22 +27,31 @@ func (m *PubRecManager) handleBlockPush(blk *btcutil.Block) {
 // the PubRecManager's database.
 func (m *PubRecManager) handleTxPush(tx *btcutil.Tx, blk *btcutil.Block) {
 
-	if ombproto.IsBulletin(tx.MsgTx()) {
-		var blkSha *wire.ShaHash
-		if blk != nil {
-			blkSha, _ = blk.Sha()
-		}
-
-		precLog.Info("Storing bltn ", tx.Sha())
-		bltn, err := ombproto.NewBulletin(tx.MsgTx(), blkSha, m.netParams)
-		if err != nil {
-			precLog.Errorf("Could create bulletin from tx: %s", err)
-		}
-
-		if err := m.db.StoreBulletin(bltn); err != nil {
-			precLog.Errorf("Failed to store bulletin: %s", err)
-		}
+	if !ombproto.IsBulletin(tx.MsgTx()) {
+		return
 	}
+
+	var blkSha *wire.ShaHash
+	if blk != nil {
+		blkSha, _ = blk.Sha()
+	}
+
+	bltn, err := ombproto.NewBulletin(tx.MsgTx(), blkSha, m.netParams)
+	if err != nil {
+		precLog.Debugf("Could not create bulletin from tx: %s", err)
+		return
+	}
+
+	if bltn == nil {
+		precLog.Errorf("NewBulletin returned a nil from tx: %s", err)
+		return
+	}
+
+	if err := m.db.StoreBulletin(bltn); err != nil {
+		precLog.Errorf("Failed to store bulletin: %s", err)
+		return
+	}
+	precLog.Infof("Stored bltn: %s", tx.Sha())
 }
 
 func newPubRecManager(net *chaincfg.Params) *PubRecManager {

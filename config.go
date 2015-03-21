@@ -48,7 +48,8 @@ const (
 )
 
 var (
-	btcdHomeDir        = btcutil.AppDataDir("ombfullnode", false)
+	ombudsCoreHome     = btcutil.AppDataDir("ombudscore", false)
+	btcdHomeDir        = filepath.Join(ombudsCoreHome, "node")
 	defaultConfigFile  = filepath.Join(btcdHomeDir, defaultConfigFilename)
 	defaultDataDir     = filepath.Join(btcdHomeDir, defaultDataDirname)
 	knownDbTypes       = database.SupportedDBs()
