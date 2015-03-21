@@ -3434,17 +3434,18 @@ func newRPCServer(listenAddrs []string, s *server) (*rpcServer, error) {
 	}
 	rpc.ntfnMgr = newWsNotificationManager(&rpc)
 
+	// Generate the TLS cert and key file if both don't already
+	// exist.
+	if !fileExists(cfg.RPCKey) && !fileExists(cfg.RPCCert) {
+		err := genCertPair(cfg.RPCCert, cfg.RPCKey)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// Setup TLS if not disabled.
 	listenFunc := net.Listen
 	if !cfg.DisableTLS {
-		// Generate the TLS cert and key file if both don't already
-		// exist.
-		if !fileExists(cfg.RPCKey) && !fileExists(cfg.RPCCert) {
-			err := genCertPair(cfg.RPCCert, cfg.RPCKey)
-			if err != nil {
-				return nil, err
-			}
-		}
 		keypair, err := tls.LoadX509KeyPair(cfg.RPCCert, cfg.RPCKey)
 		if err != nil {
 			return nil, err
