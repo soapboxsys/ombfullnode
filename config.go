@@ -53,8 +53,8 @@ var (
 	defaultConfigFile  = filepath.Join(btcdHomeDir, defaultConfigFilename)
 	defaultDataDir     = filepath.Join(btcdHomeDir, defaultDataDirname)
 	knownDbTypes       = database.SupportedDBs()
-	defaultRPCKeyFile  = filepath.Join(btcdHomeDir, "rpc.key")
-	defaultRPCCertFile = filepath.Join(btcdHomeDir, "rpc.cert")
+	defaultRPCKeyFile  = filepath.Join(ombudsCoreHome, "rpc.key")
+	defaultRPCCertFile = filepath.Join(ombudsCoreHome, "rpc.cert")
 	defaultLogDir      = filepath.Join(btcdHomeDir, defaultLogDirname)
 	// TODO NOTICE
 	defaultPubRecFile = filepath.Join(btcdHomeDir, "pubrecord.db")
