@@ -26,12 +26,12 @@ const (
 var (
 	ombudsCoreHome        = btcutil.AppDataDir("ombudscore", false)
 	btcdHomeDir           = filepath.Join(ombudsCoreHome, "node")
-	btcctlHomeDir         = filepath.Join(ombudsCoreHome, "ombctl")
+	btcctlHomeDir         = filepath.Join(ombudsCoreHome, "ctl")
 	btcwalletHomeDir      = filepath.Join(ombudsCoreHome, "wallet")
-	defaultConfigFile     = filepath.Join(btcctlHomeDir, "ombctl.conf")
+	defaultConfigFile     = filepath.Join(btcctlHomeDir, "ctl.conf")
 	defaultRPCServer      = "localhost"
-	defaultRPCCertFile    = filepath.Join(btcdHomeDir, "rpc.cert")
-	defaultWalletCertFile = filepath.Join(btcwalletHomeDir, "rpc.cert")
+	defaultRPCCertFile    = filepath.Join(ombudsCoreHome, "rpc.cert")
+	defaultWalletCertFile = filepath.Join(ombudsCoreHome, "rpc.cert")
 )
 
 // listCommands categorizes and lists all of the usable commands along with
