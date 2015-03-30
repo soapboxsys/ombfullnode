@@ -189,10 +189,6 @@ type blockManager struct {
 	headerList       *list.List
 	startHeader      *list.Element
 	nextCheckpoint   *chaincfg.Checkpoint
-
-	// NOTE!
-	// public record manager added for extra processing of txs
-	precMgr *PubRecManager
 }
 
 // resetHeaderState sets the headers-first mode state to values appropriate for
@@ -491,8 +487,9 @@ func (b *blockManager) handleTxMsg(tmsg *txMsg) {
 			false)
 		return
 	}
-	// Send the msgTx to the MessageBuffer for further processing
-	b.precMgr.txChan <- tmsg.tx
+
+	// NOTE! Send the msgTx to the MessageBuffer for further processing
+	b.server.precMgr.txChan <- tmsg.tx
 }
 
 // current returns true if we believe we are synced with our peers, false if we
@@ -628,8 +625,8 @@ func (b *blockManager) handleBlockMsg(bmsg *blockMsg) {
 	b.server.db.Sync()
 
 	// NOTE!
-	// Send block to PubRecManager for futher konos specific processing
-	b.precMgr.blkChan <- bmsg.block
+	// Send block to PubRecManager for futher processing
+	b.server.precMgr.blkChan <- bmsg.block
 
 	// Nothing more to do if we aren't in headers-first mode.
 	if !b.headersFirstMode {
@@ -1379,12 +1376,6 @@ func newBlockManager(s *server) (*blockManager, error) {
 	// Initialize the chain state now that the intial block node index has
 	// been generated.
 	bm.updateChainState(newestHash, height)
-
-	// Initialize the PubRecManager to send relevant blks and messages to Konos
-	precMgr := newPubRecManager(s.chainParams)
-	go precMgr.Start()
-
-	bm.precMgr = precMgr
 
 	return &bm, nil
 }

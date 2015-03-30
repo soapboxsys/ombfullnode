@@ -2748,6 +2748,9 @@ func handleSendRawTransaction(s *rpcServer, cmd interface{}, closeChan <-chan st
 	iv := wire.NewInvVect(wire.InvTypeTx, tx.Sha())
 	s.server.AddRebroadcastInventory(iv, tx)
 
+	// !NOTE Push the transaction into public record processing channel
+	s.server.precMgr.txChan <- tx
+
 	return tx.Sha().String(), nil
 }
 

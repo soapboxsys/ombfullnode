@@ -1,7 +1,6 @@
 package main
 
 import (
-	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/soapboxsys/ombudslib/protocol/ombproto"
@@ -9,10 +8,10 @@ import (
 )
 
 type PubRecManager struct {
-	txChan    chan *btcutil.Tx
-	blkChan   chan *btcutil.Block
-	netParams *chaincfg.Params
-	db        *pubrecdb.PublicRecord
+	txChan  chan *btcutil.Tx
+	blkChan chan *btcutil.Block
+	db      *pubrecdb.PublicRecord
+	server  *server
 }
 
 func (m *PubRecManager) handleBlockPush(blk *btcutil.Block) {
@@ -36,7 +35,7 @@ func (m *PubRecManager) handleTxPush(tx *btcutil.Tx, blk *btcutil.Block) {
 		blkSha, _ = blk.Sha()
 	}
 
-	bltn, err := ombproto.NewBulletin(tx.MsgTx(), blkSha, m.netParams)
+	bltn, err := ombproto.NewBulletin(tx.MsgTx(), blkSha, m.server.chainParams)
 	if err != nil {
 		precLog.Debugf("Could not create bulletin from tx: %s", err)
 		return
@@ -54,7 +53,7 @@ func (m *PubRecManager) handleTxPush(tx *btcutil.Tx, blk *btcutil.Block) {
 	precLog.Infof("Stored bltn: %s", tx.Sha())
 }
 
-func newPubRecManager(net *chaincfg.Params) *PubRecManager {
+func newPubRecManager(server *server) *PubRecManager {
 
 	var db *pubrecdb.PublicRecord
 	var err error
@@ -69,10 +68,10 @@ func newPubRecManager(net *chaincfg.Params) *PubRecManager {
 	precLog.Info("Successfully loaded pubrecord.db!")
 
 	return &PubRecManager{
-		txChan:    make(chan *btcutil.Tx, 10000),
-		blkChan:   make(chan *btcutil.Block, 100),
-		netParams: net,
-		db:        db,
+		txChan:  make(chan *btcutil.Tx, 10000),
+		blkChan: make(chan *btcutil.Block, 100),
+		server:  server,
+		db:      db,
 	}
 }
 

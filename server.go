@@ -101,6 +101,9 @@ type server struct {
 	nat                  NAT
 	db                   database.Db
 	timeSource           blockchain.MedianTimeSource
+
+	//!NOTE
+	precMgr *PubRecManager
 }
 
 type peerState struct {
@@ -890,6 +893,9 @@ func (s *server) Start() {
 		go s.listenHandler(listener)
 	}
 
+	// NOTE! Starts the public record manager
+	go s.precMgr.Start()
+
 	// Start the peer handler which in turn starts the address and block
 	// managers.
 	s.wg.Add(1)
@@ -1255,6 +1261,7 @@ func newServer(listenAddrs []string, db database.Db, chainParams *chaincfg.Param
 	s.blockManager = bm
 	s.txMemPool = newTxMemPool(&s)
 	s.cpuMiner = newCPUMiner(&s)
+	s.precMgr = newPubRecManager(&s)
 
 	if cfg.AddrIndex {
 		ai, err := newAddrIndexer(&s)
