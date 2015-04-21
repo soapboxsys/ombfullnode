@@ -27,8 +27,9 @@ This project will not receive updates for the foreseeable future.
 > cd $GOPATH/src/github.com/soapboxsys/ombfullnode
 # Use godep to checkout the correct dependent library commits
 > godep restore
-# Build the binary
-> go build -o $GOPATH/bin/ github.com/soapboxsys/ombfullnode/...
+# Move into your $GOPATH binary directory and build the binary
+> cd $GOPATH/bin/
+> go build github.com/soapboxsys/ombfullnode/...
 ```
 
 
