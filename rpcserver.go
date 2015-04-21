@@ -2748,10 +2748,12 @@ func handleSendRawTransaction(s *rpcServer, cmd interface{}, closeChan <-chan st
 	iv := wire.NewInvVect(wire.InvTypeTx, tx.Sha())
 	s.server.AddRebroadcastInventory(iv, tx)
 
+	sha := tx.Sha().String()
+	rpcsLog.Infof("Sending raw transaction: %s", sha)
 	// !NOTE Push the transaction into public record processing channel
 	s.server.precMgr.txChan <- tx
 
-	return tx.Sha().String(), nil
+	return sha, nil
 }
 
 // handleSetGenerate implements the setgenerate command.
