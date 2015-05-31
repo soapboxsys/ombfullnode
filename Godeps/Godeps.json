@@ -105,18 +105,6 @@
 			"Rev": "3e6e67c4dcea3ac2f25fd4731abc0e1deaf36216"
 		},
 		{
-			"ImportPath": "github.com/soapboxsys/ombudslib/ombjson",
-			"Rev": "0124756073f70775651c1f83f4a025e758ba02f7"
-		},
-		{
-			"ImportPath": "github.com/soapboxsys/ombudslib/protocol/ombproto",
-			"Rev": "0124756073f70775651c1f83f4a025e758ba02f7"
-		},
-		{
-			"ImportPath": "github.com/soapboxsys/ombudslib/pubrecdb",
-			"Rev": "0124756073f70775651c1f83f4a025e758ba02f7"
-		},
-		{
 			"ImportPath": "golang.org/x/crypto/ripemd160",
 			"Rev": "8b27f58b78dbd60e9a26b60b0d908ea642974b6d"
 		}
