@@ -14,6 +14,7 @@ import (
 
 	"github.com/btcsuite/btcutil"
 	flags "github.com/btcsuite/go-flags"
+	"github.com/soapboxsys/ombudslib/ombutil"
 )
 
 type config struct {
@@ -81,7 +82,7 @@ func main() {
 func cleanAndExpandPath(path string) string {
 	// Expand initial ~ to OS specific home directory.
 	if strings.HasPrefix(path, "~") {
-		appHomeDir := btcutil.AppDataDir("gencerts", false)
+		appHomeDir := ombutil.AppDataDir("gencerts", false)
 		homeDir := filepath.Dir(appHomeDir)
 		path = strings.Replace(path, "~", homeDir, 1)
 	}

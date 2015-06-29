@@ -23,6 +23,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	flags "github.com/btcsuite/go-flags"
 	"github.com/btcsuite/go-socks/socks"
+	"github.com/soapboxsys/ombudslib/ombutil"
 )
 
 const (
@@ -48,7 +49,7 @@ const (
 )
 
 var (
-	ombudsCoreHome     = btcutil.AppDataDir("ombudscore", false)
+	ombudsCoreHome     = ombutil.AppDataDir("ombudscore", false)
 	btcdHomeDir        = filepath.Join(ombudsCoreHome, "node")
 	defaultConfigFile  = filepath.Join(btcdHomeDir, defaultConfigFilename)
 	defaultDataDir     = filepath.Join(btcdHomeDir, defaultDataDirname)

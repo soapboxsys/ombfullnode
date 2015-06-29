@@ -13,8 +13,8 @@ import (
 	"github.com/btcsuite/btcd/database"
 	_ "github.com/btcsuite/btcd/database/ldb"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
 	flags "github.com/btcsuite/go-flags"
+	"github.com/soapboxsys/ombudslib/ombutil"
 )
 
 const (
@@ -25,7 +25,7 @@ const (
 )
 
 var (
-	btcdHomeDir     = btcutil.AppDataDir("btcd", false)
+	btcdHomeDir     = ombutil.AppDataDir("btcd", false)
 	defaultDataDir  = filepath.Join(btcdHomeDir, "data")
 	knownDbTypes    = database.SupportedDBs()
 	activeNetParams = &chaincfg.MainNetParams
