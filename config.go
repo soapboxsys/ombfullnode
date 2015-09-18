@@ -58,7 +58,7 @@ var (
 	defaultRPCCertFile = filepath.Join(ombudsCoreHome, "rpc.cert")
 	defaultLogDir      = filepath.Join(btcdHomeDir, defaultLogDirname)
 	// TODO NOTICE
-	defaultPubRecFile = filepath.Join(btcdHomeDir, "pubrecord.db")
+	defaultPubRecFileName = "pubrecord.db"
 )
 
 // runServiceCommand is only set to a real function on Windows.  It is used
@@ -309,9 +309,6 @@ func newConfigParser(cfg *config, so *serviceOptions, options flags.Options) *fl
 func loadConfig() (*config, []string, error) {
 	// Default config.
 	cfg := config{
-		//TODO NOTICE
-		PubRecFile: defaultPubRecFile,
-
 		ConfigFile:        defaultConfigFile,
 		DebugLevel:        defaultLogLevel,
 		MaxPeers:          defaultMaxPeers,
@@ -455,6 +452,8 @@ func loadConfig() (*config, []string, error) {
 	// worry about changing names per network and such.
 	cfg.DataDir = cleanAndExpandPath(cfg.DataDir)
 	cfg.DataDir = filepath.Join(cfg.DataDir, netName(activeNetParams))
+
+	cfg.PubRecFile = filepath.Join(cfg.DataDir, defaultPubRecFileName)
 
 	// Append the network type to the log directory so it is "namespaced"
 	// per network in the same fashion as the data directory.

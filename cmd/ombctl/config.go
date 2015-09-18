@@ -12,8 +12,8 @@ import (
 	"strings"
 
 	"github.com/btcsuite/btcd/btcjson/v2/btcjson"
-	"github.com/btcsuite/btcutil"
 	flags "github.com/btcsuite/go-flags"
+	"github.com/soapboxsys/ombudslib/ombutil"
 )
 
 const (
@@ -24,7 +24,7 @@ const (
 )
 
 var (
-	ombudsCoreHome        = btcutil.AppDataDir("ombudscore", false)
+	ombudsCoreHome        = ombutil.AppDataDir("ombudscore", false)
 	btcdHomeDir           = filepath.Join(ombudsCoreHome, "node")
 	btcctlHomeDir         = filepath.Join(ombudsCoreHome, "ctl")
 	btcwalletHomeDir      = filepath.Join(ombudsCoreHome, "wallet")
