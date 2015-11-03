@@ -504,6 +504,14 @@ func (b *blockManager) handleTxMsg(tmsg *txMsg) {
 		code, reason := errToRejectErr(err)
 		tmsg.peer.PushRejectMsg(wire.CmdTx, code, reason, txHash,
 			false)
+
+		// !NOTE! ombfullnode
+		// This is a new transaction for this node so hand the tx to the
+		// pubrecmanager for further processing, if it is a ombproto record.
+		// if ombproto.RelevantTx(tx) {
+		//     b.pubrecmgr.processTx(tx)
+		// }
+
 		return
 	}
 }
@@ -1199,6 +1207,10 @@ func (b *blockManager) handleNotifyMsg(notification *blockchain.Notification) {
 			break
 		}
 
+		// !NOTE! ombfullnode
+		// Store relevant contents of block in the public record as needed.
+		// b.pubrecmgr.acceptBlock(b)
+
 		// Generate the inventory vector and relay it.
 		iv := wire.NewInvVect(wire.InvTypeBlock, block.Sha())
 		b.server.RelayInventory(iv, nil)
@@ -1224,6 +1236,10 @@ func (b *blockManager) handleNotifyMsg(notification *blockchain.Notification) {
 			b.server.txMemPool.RemoveOrphan(tx.Sha())
 			b.server.txMemPool.ProcessOrphans(tx.Sha())
 		}
+
+		// !NOTE! ombfullnode
+		// Commit block to pubrec. Report any errors (these are serious).
+		// err := b.pubrecmgr.attachBlock(b)
 
 		if r := b.server.rpcServer; r != nil {
 			// Now that this block is in the blockchain we can mark
@@ -1264,6 +1280,11 @@ func (b *blockManager) handleNotifyMsg(notification *blockchain.Notification) {
 				b.server.txMemPool.RemoveTransaction(tx)
 			}
 		}
+
+		// !NOTE! ombfullnode
+		// Change block in pubrec from pending to floating.
+		// Report any errors (these are serious).
+		// b.pubrecmgr.detachBlock(b)
 
 		// Notify registered websocket clients.
 		if r := b.server.rpcServer; r != nil {
