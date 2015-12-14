@@ -197,6 +197,9 @@ type server struct {
 	db                   database.Db
 	timeSource           blockchain.MedianTimeSource
 	services             wire.ServiceFlag
+
+	// !NOTE!
+	pubRecManager *pubRecManager
 }
 
 // serverPeer extends the peer to maintain state shared by the server and
@@ -1549,12 +1552,15 @@ func (s *server) retryConn(sp *serverPeer, retryDuration time.Duration) {
 // peers to and from the server, banning peers, and broadcasting messages to
 // peers.  It must be run in a goroutine.
 func (s *server) peerHandler() {
-	// Start the address manager and block manager, both of which are needed
+	// Start the address , pubrec and block managers all of which are needed
 	// by peers.  This is done here since their lifecycle is closely tied
 	// to this handler and rather than adding more channels to sychronize
 	// things, it's easier and slightly faster to simply start and stop them
 	// in this handler.
 	s.addrManager.Start()
+	//!NOTE! Because the pubrec Manager depends on the block manager it is
+	//started before the block manager
+	s.pubRecManager.Start()
 	s.blockManager.Start()
 
 	srvrLog.Tracef("Starting peer handler")
@@ -1715,6 +1721,7 @@ out:
 		s.addrIndexer.Stop()
 	}
 	s.blockManager.Stop()
+	s.pubRecManager.Stop()
 	s.addrManager.Stop()
 	s.wg.Done()
 	srvrLog.Tracef("Peer handler done")
@@ -1950,7 +1957,7 @@ func (s *server) Start() {
 	}
 
 	// Start the peer handler which in turn starts the address and block
-	// managers.
+	// managers and the public record manager
 	s.wg.Add(1)
 	go s.peerHandler()
 
@@ -2322,6 +2329,12 @@ func newServer(listenAddrs []string, db database.Db, chainParams *chaincfg.Param
 		return nil, err
 	}
 	s.blockManager = bm
+
+	// !NOTE!
+	if s.pubRecManager, err = newPubRecManager(&s); err != nil {
+		return nil, err
+	}
+
 	s.txMemPool = newTxMemPool(&s)
 	s.cpuMiner = newCPUMiner(&s)
 

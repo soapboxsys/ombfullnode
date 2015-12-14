@@ -129,12 +129,16 @@ type config struct {
 	DropAddrIndex      bool          `long:"dropaddrindex" description:"Deletes the address-based transaction index from the database on start up, and the exits."`
 	NoPeerBloomFilters bool          `long:"nopeerbloomfilters" description:"Disable bloom filtering support."`
 	SigCacheMaxSize    uint          `long:"sigcachemaxsize" description:"The maximum number of entries in the signature verification cache."`
-	onionlookup        func(string) ([]net.IP, error)
-	lookup             func(string) ([]net.IP, error)
-	oniondial          func(string, string) (net.Conn, error)
-	dial               func(string, string) (net.Conn, error)
-	miningAddrs        []btcutil.Address
-	minRelayTxFee      btcutil.Amount
+
+	// !NOTE! New param, never initialized.... TODO
+	PubRecFile string `long:"pubrecfile" description:"The path to the public record sqlite database."`
+
+	onionlookup   func(string) ([]net.IP, error)
+	lookup        func(string) ([]net.IP, error)
+	oniondial     func(string, string) (net.Conn, error)
+	dial          func(string, string) (net.Conn, error)
+	miningAddrs   []btcutil.Address
+	minRelayTxFee btcutil.Amount
 }
 
 // serviceOptions defines the configuration options for btcd as a service on
