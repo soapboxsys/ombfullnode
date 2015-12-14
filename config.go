@@ -26,11 +26,11 @@ import (
 )
 
 const (
-	defaultConfigFilename    = "btcd.conf"
+	defaultConfigFilename    = "node.conf"
 	defaultDataDirname       = "data"
 	defaultLogLevel          = "info"
 	defaultLogDirname        = "logs"
-	defaultLogFilename       = "btcd.log"
+	defaultLogFilename       = "node.log"
 	defaultMaxPeers          = 125
 	defaultBanDuration       = time.Hour * 24
 	defaultMaxRPCClients     = 10
@@ -49,13 +49,14 @@ const (
 )
 
 var (
-	btcdHomeDir        = btcutil.AppDataDir("btcd", false)
-	defaultConfigFile  = filepath.Join(btcdHomeDir, defaultConfigFilename)
-	defaultDataDir     = filepath.Join(btcdHomeDir, defaultDataDirname)
+	ombHomeDir         = btcutil.AppDataDir("ombudsnode", false)
+	defaultConfigFile  = filepath.Join(ombHomeDir, defaultConfigFilename)
+	defaultDataDir     = filepath.Join(ombHomeDir, defaultDataDirname)
 	knownDbTypes       = database.SupportedDBs()
-	defaultRPCKeyFile  = filepath.Join(btcdHomeDir, "rpc.key")
-	defaultRPCCertFile = filepath.Join(btcdHomeDir, "rpc.cert")
-	defaultLogDir      = filepath.Join(btcdHomeDir, defaultLogDirname)
+	defaultRPCKeyFile  = filepath.Join(ombHomeDir, "rpc.key")
+	defaultRPCCertFile = filepath.Join(ombHomeDir, "rpc.cert")
+	defaultLogDir      = filepath.Join(ombHomeDir, defaultLogDirname)
+	defaultPubRecFile  = filepath.Join(defaultDataDir, "pubrecord.db")
 )
 
 // runServiceCommand is only set to a real function on Windows.  It is used
@@ -152,7 +153,7 @@ type serviceOptions struct {
 func cleanAndExpandPath(path string) string {
 	// Expand initial ~ to OS specific home directory.
 	if strings.HasPrefix(path, "~") {
-		homeDir := filepath.Dir(btcdHomeDir)
+		homeDir := filepath.Dir(ombHomeDir)
 		path = strings.Replace(path, "~", homeDir, 1)
 	}
 
@@ -344,6 +345,8 @@ func loadConfig() (*config, []string, error) {
 		MaxOrphanTxs:      maxOrphanTransactions,
 		Generate:          defaultGenerate,
 		AddrIndex:         defaultAddrIndex,
+		// !NOTE!
+		PubRecFile: defaultPubRecFile,
 	}
 
 	// Service options which are only added on Windows.
@@ -417,7 +420,7 @@ func loadConfig() (*config, []string, error) {
 
 	// Create the home directory if it doesn't already exist.
 	funcName := "loadConfig"
-	err = os.MkdirAll(btcdHomeDir, 0700)
+	err = os.MkdirAll(ombHomeDir, 0700)
 	if err != nil {
 		// Show a nicer error message if it's because a symlink is
 		// linked to a directory that does not exist (probably because
