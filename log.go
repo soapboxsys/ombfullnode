@@ -1,4 +1,4 @@
-// Copyright (c) 2013-2014 Conformal Systems LLC.
+// Copyright (c) 2013-2014 The btcsuite developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/addrmgr"
-
 	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/database"
+	"github.com/btcsuite/btcd/peer"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btclog"
@@ -21,13 +21,6 @@ import (
 )
 
 const (
-	// lockTimeThreshold is the number below which a lock time is
-	// interpreted to be a block number.  Since an average of one block
-	// is generated per 10 minutes, this allows blocks for about 9,512
-	// years.  However, if the field is interpreted as a timestamp, given
-	// the lock time is a uint32, the max is sometime around 2106.
-	lockTimeThreshold uint32 = 5e8 // Tue Nov 5 00:53:20 1985 UTC
-
 	// maxRejectReasonLen is the maximum length of a sanitized reject reason
 	// that will be logged.
 	maxRejectReasonLen = 250
@@ -53,7 +46,7 @@ var (
 	srvrLog    = btclog.Disabled
 	txmpLog    = btclog.Disabled
 
-	// Extra logging for pub record
+	// !NOTE! Extra logging for pub record
 	precLog = btclog.Disabled
 )
 
@@ -73,8 +66,8 @@ var subsystemLoggers = map[string]btclog.Logger{
 	"SRVR": srvrLog,
 	"TXMP": txmpLog,
 
-	// Extra logging for pub record
-	"PREC": txmpLog,
+	// !NOTE! Extra logging for pub record
+	"PREC": precLog,
 }
 
 // logClosure is used to provide a closure over expensive logging operations
@@ -131,6 +124,7 @@ func useLogger(subsystemID string, logger btclog.Logger) {
 
 	case "PEER":
 		peerLog = logger
+		peer.UseLogger(logger)
 
 	case "RPCS":
 		rpcsLog = logger
@@ -145,8 +139,8 @@ func useLogger(subsystemID string, logger btclog.Logger) {
 	case "TXMP":
 		txmpLog = logger
 
-	// Extra logging for pub record
 	case "PREC":
+		// !NOTE! Extra logging for pub record
 		precLog = logger
 	}
 }
@@ -224,9 +218,9 @@ func directionString(inbound bool) string {
 func formatLockTime(lockTime uint32) string {
 	// The lock time field of a transaction is either a block height at
 	// which the transaction is finalized or a timestamp depending on if the
-	// value is before the lockTimeThreshold.  When it is under the
+	// value is before the txscript.LockTimeThreshold.  When it is under the
 	// threshold it is a block height.
-	if lockTime < lockTimeThreshold {
+	if lockTime < txscript.LockTimeThreshold {
 		return fmt.Sprintf("height %d", lockTime)
 	}
 
@@ -324,15 +318,13 @@ func messageSummary(msg wire.Message) string {
 		// No summary.
 
 	case *wire.MsgTx:
-		hash, _ := msg.TxSha()
 		return fmt.Sprintf("hash %s, %d inputs, %d outputs, lock %s",
-			hash, len(msg.TxIn), len(msg.TxOut),
+			msg.TxSha(), len(msg.TxIn), len(msg.TxOut),
 			formatLockTime(msg.LockTime))
 
 	case *wire.MsgBlock:
 		header := &msg.Header
-		hash, _ := msg.BlockSha()
-		return fmt.Sprintf("hash %s, ver %d, %d tx, %s", hash,
+		return fmt.Sprintf("hash %s, ver %d, %d tx, %s", msg.BlockSha(),
 			header.Version, len(msg.Transactions), header.Timestamp)
 
 	case *wire.MsgInv:
