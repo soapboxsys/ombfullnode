@@ -55,6 +55,7 @@ type Params struct {
 	Name        string
 	Net         wire.BitcoinNet
 	DefaultPort string
+	DNSSeeds    []string
 
 	// Chain parameters
 	GenesisBlock           *wire.MsgBlock
@@ -101,6 +102,15 @@ var MainNetParams = Params{
 	Name:        "mainnet",
 	Net:         wire.MainNet,
 	DefaultPort: "8333",
+	DNSSeeds: []string{
+		"seed.bitcoin.sipa.be",
+		"dnsseed.bluematt.me",
+		"dnsseed.bitcoin.dashjr.org",
+		"seed.bitcoinstats.com",
+		"seed.bitnodes.io",
+		"bitseed.xf2.org",
+		"seed.bitcoin.jonasschnelli.ch",
+	},
 
 	// Chain parameters
 	GenesisBlock:           &genesisBlock,
@@ -130,6 +140,7 @@ var MainNetParams = Params{
 		{319400, newShaHashFromStr("000000000000000021c6052e9becade189495d1c539aa37c58917305fd15f13b")},
 		{343185, newShaHashFromStr("0000000000000000072b8bf361d01a6ba7d445dd024203fafc78768ed4368554")},
 		{352940, newShaHashFromStr("000000000000000010755df42dba556bb72be6a32f3ce0b6941ce4430152c9ff")},
+		{382320, newShaHashFromStr("00000000000000000a8dc6ed5b133d0eb2fd6af56203e4159789b092defd8ab2")},
 	},
 
 	// Enforce current block version once majority of the network has
@@ -166,6 +177,7 @@ var RegressionNetParams = Params{
 	Name:        "regtest",
 	Net:         wire.TestNet,
 	DefaultPort: "18444",
+	DNSSeeds:    []string{},
 
 	// Chain parameters
 	GenesisBlock:           &regTestGenesisBlock,
@@ -213,6 +225,12 @@ var TestNet3Params = Params{
 	Name:        "testnet3",
 	Net:         wire.TestNet3,
 	DefaultPort: "18333",
+	DNSSeeds: []string{
+		"testnet-seed.alexykot.me",
+		"testnet-seed.bitcoin.schildbach.de",
+		"testnet-seed.bitcoin.petertodd.org",
+		"testnet-seed.bluematt.me",
+	},
 
 	// Chain parameters
 	GenesisBlock:           &testNet3GenesisBlock,
@@ -266,6 +284,7 @@ var SimNetParams = Params{
 	Name:        "simnet",
 	Net:         wire.SimNet,
 	DefaultPort: "18555",
+	DNSSeeds:    []string{}, // NOTE: There must NOT be any seeds.
 
 	// Chain parameters
 	GenesisBlock:           &simNetGenesisBlock,
