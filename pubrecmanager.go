@@ -18,12 +18,22 @@ func (m *pubRecManager) AcceptBlock(blk *btcutil.Block) {
 
 }
 
-func (m *pubRecManager) AttachBlock(blk *btcutil.Block) {
-
+func (m *pubRecManager) ConnectBlock(blk *btcutil.Block) {
+	// Look at block height, if it is above the introduction threshold, Parse
+	// the block. Otherwise just store the headers.
+	// TODO
+	ombBlk := ombutil.CreateUBlock(blk)
+	err := m.db.InsertOmbBlk(ombBlk)
+	if err != nil {
+		precLog.Errorf("Connecting Blk[%s] failed with: %s", blk.Sha(), err)
+	}
 }
 
-func (m *pubRecManager) DetachBlock(blk *btcutil.Block) {
-
+func (m *pubRecManager) DisconnectBlock(blk *btcutil.Block) {
+	err := m.db.RemoveBlk(blk.Sha())
+	if err != nil {
+		precLog.Errorf("Disconnecting Blk[%s] failed with: %s", blk.Sha(), err)
+	}
 }
 
 func (m *pubRecManager) ProcessTx(tx *btcutil.Tx) {
@@ -52,7 +62,6 @@ func newPubRecManager(server *server) (*pubRecManager, error) {
 	return m, nil
 }
 
-// The PublicRecordManager must be started as a separate go routine.
 func (m *pubRecManager) Start() {
 	precLog.Info("Starting PubRecord db Manager.")
 

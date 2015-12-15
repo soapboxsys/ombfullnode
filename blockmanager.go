@@ -18,8 +18,7 @@ import (
 	"github.com/btcsuite/btcd/database"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
-
-	"github.com/soapboxsys/ombudslib/ombutil"
+	"github.com/soapboxsys/ombudslib/ombwire"
 )
 
 const (
@@ -509,8 +508,8 @@ func (b *blockManager) handleTxMsg(tmsg *txMsg) {
 
 		// !NOTE! ombfullnode
 		// This is a new transaction for this node so hand the tx to the
-		// pubrecmanager for further processing, if it is a ombproto record.
-		if ombutil.RelevantTx(tmsg.tx) {
+		// pubrecmanager for further processing, if looks like a ombwire tx.
+		if ombwire.HasMagic(tmsg.tx.MsgTx()) {
 			b.server.pubRecManager.ProcessTx(tmsg.tx)
 		}
 
@@ -1241,7 +1240,7 @@ func (b *blockManager) handleNotifyMsg(notification *blockchain.Notification) {
 
 		// !NOTE! ombfullnode
 		// Commit block to pubrec. Reports any errors (these are serious).
-		b.server.pubRecManager.AttachBlock(block)
+		b.server.pubRecManager.ConnectBlock(block)
 
 		if r := b.server.rpcServer; r != nil {
 			// Now that this block is in the blockchain we can mark
@@ -1286,7 +1285,7 @@ func (b *blockManager) handleNotifyMsg(notification *blockchain.Notification) {
 		// !NOTE! ombfullnode
 		// Change block in pubrec from pending to floating.
 		// Report any errors (these are serious).
-		b.server.pubRecManager.DetachBlock(block)
+		b.server.pubRecManager.DisconnectBlock(block)
 
 		// Notify registered websocket clients.
 		if r := b.server.rpcServer; r != nil {
