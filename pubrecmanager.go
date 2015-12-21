@@ -19,20 +19,29 @@ func (m *pubRecManager) AcceptBlock(blk *btcutil.Block) {
 }
 
 func (m *pubRecManager) ConnectBlock(blk *btcutil.Block) {
+	if !ombutil.PastPegDate(blk) {
+		return
+	}
+
 	// Look at block height, if it is above the introduction threshold, Parse
 	// the block. Otherwise just store the headers.
-	// TODO
 	ombBlk := ombutil.CreateUBlock(blk)
-	err := m.db.InsertOmbBlk(ombBlk)
-	if err != nil {
-		precLog.Errorf("Connecting Blk[%s] failed with: %s", blk.Sha(), err)
+	err, ok := m.db.InsertUBlock(ombBlk)
+	if err != nil || !ok {
+		precLog.Errorf("Connecting Blk[%s] failed with: %s and: %s",
+			blk.Sha(), err, ok)
 	}
 }
 
 func (m *pubRecManager) DisconnectBlock(blk *btcutil.Block) {
-	err := m.db.RemoveBlk(blk.Sha())
-	if err != nil {
-		precLog.Errorf("Disconnecting Blk[%s] failed with: %s", blk.Sha(), err)
+	if !ombutil.PastPegDate(blk) {
+		return
+	}
+
+	err, ok := m.db.DeleteBlockTip(blk.Sha())
+	if err != nil || !ok {
+		precLog.Errorf("Disconnecting Blk[%s] failed with: %s and: %s",
+			blk.Sha(), ok, err)
 	}
 }
 
@@ -49,11 +58,11 @@ func newPubRecManager(server *server) (*pubRecManager, error) {
 	if err != nil {
 		db, err = pubrecdb.InitDB(cfg.PubRecFile, activeNetParams.Params)
 		if err != nil {
-			precLog.Errorf("Failed to Init db! %s", err)
+			precLog.Errorf("Failed to Init db: %s", err)
 			return nil, err
 		}
 	}
-	precLog.Info("Successfully loaded pubrecord.db!")
+	precLog.Infof("Successfully loaded: %s", cfg.PubRecFile)
 
 	m := &pubRecManager{
 		server: server,
