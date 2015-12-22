@@ -56,7 +56,6 @@ var (
 	defaultRPCKeyFile  = filepath.Join(ombHomeDir, "rpc.key")
 	defaultRPCCertFile = filepath.Join(ombHomeDir, "rpc.cert")
 	defaultLogDir      = filepath.Join(ombHomeDir, defaultLogDirname)
-	defaultPubRecFile  = filepath.Join(defaultDataDir, "pubrecord.db")
 )
 
 // runServiceCommand is only set to a real function on Windows.  It is used
@@ -130,9 +129,6 @@ type config struct {
 	DropAddrIndex      bool          `long:"dropaddrindex" description:"Deletes the address-based transaction index from the database on start up, and the exits."`
 	NoPeerBloomFilters bool          `long:"nopeerbloomfilters" description:"Disable bloom filtering support."`
 	SigCacheMaxSize    uint          `long:"sigcachemaxsize" description:"The maximum number of entries in the signature verification cache."`
-
-	// !NOTE! New param, never initialized.... TODO
-	PubRecFile string `long:"pubrecfile" description:"The path to the public record sqlite database."`
 
 	onionlookup   func(string) ([]net.IP, error)
 	lookup        func(string) ([]net.IP, error)
@@ -345,8 +341,6 @@ func loadConfig() (*config, []string, error) {
 		MaxOrphanTxs:      maxOrphanTransactions,
 		Generate:          defaultGenerate,
 		AddrIndex:         defaultAddrIndex,
-		// !NOTE!
-		PubRecFile: defaultPubRecFile,
 	}
 
 	// Service options which are only added on Windows.

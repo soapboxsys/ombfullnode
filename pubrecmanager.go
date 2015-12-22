@@ -1,6 +1,8 @@
 package main
 
 import (
+	"path"
+
 	"github.com/btcsuite/btcutil"
 	"github.com/soapboxsys/ombudslib/ombutil"
 	"github.com/soapboxsys/ombudslib/pubrecdb"
@@ -54,15 +56,18 @@ func newPubRecManager(server *server) (*pubRecManager, error) {
 	var db *pubrecdb.PublicRecord
 	var err error
 
-	db, err = pubrecdb.LoadDB(cfg.PubRecFile)
+	dbName := "pubrecord.db"
+	dbPath := path.Join(cfg.DataDir, dbName)
+
+	db, err = pubrecdb.LoadDB(dbPath)
 	if err != nil {
-		db, err = pubrecdb.InitDB(cfg.PubRecFile, activeNetParams.Params)
+		db, err = pubrecdb.InitDB(dbPath, activeNetParams.Params)
 		if err != nil {
 			precLog.Errorf("Failed to Init db: %s", err)
 			return nil, err
 		}
 	}
-	precLog.Infof("Successfully loaded: %s", cfg.PubRecFile)
+	precLog.Infof("Successfully loaded: %s", dbPath)
 
 	m := &pubRecManager{
 		server: server,
