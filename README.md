@@ -13,6 +13,11 @@ This fork pulls in releases from btcd.
 - Install Go according to the installation instructions here:
   http://golang.org/doc/install
 
+_git_
+- Refer to your package manager for help installing git.
+
+_gcc_
+- Refer to your package manager for help installing gcc.
 
 ## Installation
 
@@ -22,16 +27,13 @@ This fork pulls in releases from btcd.
   launch it:
 
   ```bash
-# Download and configure the dependencies
-  > apt-get install gcc git
-  > # Install a version of go > 1.3
 # Download and build the required packages.
   > go get -v -u github.com/soapboxsys/ombfullnode/...
 # Launch it
-  > ombfullnode
+  > $GOPATH/bin/ombfullnode
   ```
 
-- ombfullnode (and utilities) will now be installed in either ```$GOPATH/bin```
+- ombfullnode (and utilities) will now be installed ```$GOPATH/bin```
 If you have not already added the bin directory to your system's path when you
 setup go, we recommend you do so now.
 
