@@ -49,7 +49,7 @@ const (
 )
 
 var (
-	ombHomeDir         = btcutil.AppDataDir("ombudsnode", false)
+	ombHomeDir         = btcutil.AppDataDir("ombnode", false)
 	defaultConfigFile  = filepath.Join(ombHomeDir, defaultConfigFilename)
 	defaultDataDir     = filepath.Join(ombHomeDir, defaultDataDirname)
 	knownDbTypes       = database.SupportedDBs()

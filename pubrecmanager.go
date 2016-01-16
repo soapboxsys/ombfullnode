@@ -27,11 +27,17 @@ func (m *pubRecManager) ConnectBlock(blk *btcutil.Block) {
 
 	// Look at block height, if it is above the introduction threshold, Parse
 	// the block. Otherwise just store the headers.
-	ombBlk := ombutil.CreateUBlock(blk)
+	ombBlk := ombutil.CreateUBlock(blk, precLog)
 	err, ok := m.db.InsertUBlock(ombBlk)
 	if err != nil || !ok {
 		precLog.Errorf("Connecting Blk[%s] failed with: %s and: %s",
 			blk.Sha(), err, ok)
+		return
+	}
+
+	if len(ombBlk.Bulletins) > 0 || len(ombBlk.Endorsements) > 0 {
+		precLog.Infof("Inserted Blk[%s] with %d bltns & %d endos",
+			blk.Sha(), len(ombBlk.Bulletins), len(ombBlk.Endorsements))
 	}
 }
 
@@ -44,7 +50,10 @@ func (m *pubRecManager) DisconnectBlock(blk *btcutil.Block) {
 	if err != nil || !ok {
 		precLog.Errorf("Disconnecting Blk[%s] failed with: %s and: %s",
 			blk.Sha(), ok, err)
+		return
 	}
+
+	precLog.Infof("Disconnected Blk[%s]", blk.Sha())
 }
 
 func (m *pubRecManager) ProcessTx(tx *btcutil.Tx) {
