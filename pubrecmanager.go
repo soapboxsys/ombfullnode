@@ -21,13 +21,13 @@ func (m *pubRecManager) AcceptBlock(blk *btcutil.Block) {
 }
 
 func (m *pubRecManager) ConnectBlock(blk *btcutil.Block) {
-	if !ombutil.PastPegDate(blk) {
+	if !ombutil.PastPegDate(blk, activeNetParams.Params) {
 		return
 	}
 
 	// Look at block height, if it is above the introduction threshold, Parse
 	// the block. Otherwise just store the headers.
-	ombBlk := ombutil.CreateUBlock(blk, precLog)
+	ombBlk := ombutil.CreateUBlock(blk, precLog, activeNetParams.Params)
 	err, ok := m.db.InsertUBlock(ombBlk)
 	if err != nil || !ok {
 		precLog.Errorf("Connecting Blk[%s] failed with: %s and: %s",
@@ -42,7 +42,7 @@ func (m *pubRecManager) ConnectBlock(blk *btcutil.Block) {
 }
 
 func (m *pubRecManager) DisconnectBlock(blk *btcutil.Block) {
-	if !ombutil.PastPegDate(blk) {
+	if !ombutil.PastPegDate(blk, activeNetParams.Params) {
 		return
 	}
 
