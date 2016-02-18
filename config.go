@@ -33,6 +33,7 @@ const (
 	defaultLogFilename       = "node.log"
 	defaultMaxPeers          = 125
 	defaultBanDuration       = time.Hour * 24
+	defaultBanThreshold      = 100
 	defaultMaxRPCClients     = 10
 	defaultMaxRPCWebsockets  = 25
 	defaultVerifyEnabled     = false
@@ -84,7 +85,9 @@ type config struct {
 	DisableListen      bool          `long:"nolisten" description:"Disable listening for incoming connections -- NOTE: Listening is automatically disabled if the --connect or --proxy options are used without also specifying listen interfaces via --listen"`
 	Listeners          []string      `long:"listen" description:"Add an interface/port to listen for connections (default all interfaces port: 8333, testnet: 18333)"`
 	MaxPeers           int           `long:"maxpeers" description:"Max number of inbound and outbound peers"`
+	DisableBanning     bool          `long:"nobanning" description:"Disable banning of misbehaving peers"`
 	BanDuration        time.Duration `long:"banduration" description:"How long to ban misbehaving peers.  Valid time units are {s, m, h}.  Minimum 1 second"`
+	BanThreshold       uint32        `long:"banthreshold" description:"Maximum allowed ban score before disconnecting and banning misbehaving peers."`
 	RPCUser            string        `short:"u" long:"rpcuser" description:"Username for RPC connections"`
 	RPCPass            string        `short:"P" long:"rpcpass" default-mask:"-" description:"Password for RPC connections"`
 	RPCLimitUser       string        `long:"rpclimituser" description:"Username for limited RPC connections"`
@@ -126,7 +129,7 @@ type config struct {
 	BlockPrioritySize  uint32        `long:"blockprioritysize" description:"Size in bytes for high-priority/low-fee transactions when creating a block"`
 	GetWorkKeys        []string      `long:"getworkkey" description:"DEPRECATED -- Use the --miningaddr option instead"`
 	AddrIndex          bool          `long:"addrindex" description:"Build and maintain a full address index. Currently only supported by leveldb."`
-	DropAddrIndex      bool          `long:"dropaddrindex" description:"Deletes the address-based transaction index from the database on start up, and the exits."`
+	DropAddrIndex      bool          `long:"dropaddrindex" description:"Deletes the address-based transaction index from the database on start up, and then exits."`
 	NoPeerBloomFilters bool          `long:"nopeerbloomfilters" description:"Disable bloom filtering support."`
 	SigCacheMaxSize    uint          `long:"sigcachemaxsize" description:"The maximum number of entries in the signature verification cache."`
 
@@ -325,6 +328,7 @@ func loadConfig() (*config, []string, error) {
 		DebugLevel:        defaultLogLevel,
 		MaxPeers:          defaultMaxPeers,
 		BanDuration:       defaultBanDuration,
+		BanThreshold:      defaultBanThreshold,
 		RPCMaxClients:     defaultMaxRPCClients,
 		RPCMaxWebsockets:  defaultMaxRPCWebsockets,
 		DataDir:           defaultDataDir,

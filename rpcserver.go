@@ -32,6 +32,7 @@ import (
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/database"
+	"github.com/btcsuite/btcd/mining"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
@@ -677,16 +678,17 @@ func stringInSlice(a string, list []string) bool {
 // createVinList returns a slice of JSON objects for the inputs of the passed
 // transaction.
 func createVinListPrevOut(s *rpcServer, mtx *wire.MsgTx, chainParams *chaincfg.Params, vinExtra int, filterAddrMap map[string]struct{}) []btcjson.VinPrevOut {
-	// We use a dynamically sized list to accomodate address filter.
+	// Use a dynamically sized list to accomodate the address filter.
 	vinList := make([]btcjson.VinPrevOut, 0, len(mtx.TxIn))
 
 	// Coinbase transactions only have a single txin by definition.
 	if blockchain.IsCoinBaseTx(mtx) {
-		// include tx only if filterAddrMap is empty because coinbase has no address
-		// and so would never match a non-empty filter.
+		// Include tx only if filterAddrMap is empty because coinbase
+		// has no address and so would never match a non-empty filter.
 		if len(filterAddrMap) != 0 {
 			return vinList
 		}
+
 		var vinEntry btcjson.VinPrevOut
 		txIn := mtx.TxIn[0]
 		vinEntry.Coinbase = hex.EncodeToString(txIn.SignatureScript)
@@ -707,9 +709,6 @@ func createVinListPrevOut(s *rpcServer, mtx *wire.MsgTx, chainParams *chaincfg.P
 	}
 
 	for _, txIn := range mtx.TxIn {
-		// reset filter flag for each.
-		passesFilter := len(filterAddrMap) == 0
-
 		// The disassembled string will contain [error] inline
 		// if the script doesn't fully parse, so ignore the
 		// error here.
@@ -728,14 +727,21 @@ func createVinListPrevOut(s *rpcServer, mtx *wire.MsgTx, chainParams *chaincfg.P
 		_, addrs, _, _ := txscript.ExtractPkScriptAddrs(
 			originTxOut.PkScript, chainParams)
 
+		// Encode the addresses while checking if the address passes the
+		// filter when needed.
+		passesFilter := len(filterAddrMap) == 0
 		encodedAddrs := make([]string, len(addrs))
 		for j, addr := range addrs {
-			encodedAddrs[j] = addr.EncodeAddress()
+			encodedAddr := addr.EncodeAddress()
+			encodedAddrs[j] = encodedAddr
 
-			if len(filterAddrMap) > 0 {
-				if _, exists := filterAddrMap[encodedAddrs[j]]; exists {
-					passesFilter = true
-				}
+			// No need to check the map again if the filter already
+			// passes.
+			if passesFilter {
+				continue
+			}
+			if _, exists := filterAddrMap[encodedAddr]; exists {
+				passesFilter = true
 			}
 		}
 
@@ -771,9 +777,6 @@ func createVinListPrevOut(s *rpcServer, mtx *wire.MsgTx, chainParams *chaincfg.P
 func createVoutList(mtx *wire.MsgTx, chainParams *chaincfg.Params, filterAddrMap map[string]struct{}) []btcjson.Vout {
 	voutList := make([]btcjson.Vout, 0, len(mtx.TxOut))
 	for i, v := range mtx.TxOut {
-		// reset filter flag for each.
-		passesFilter := len(filterAddrMap) == 0
-
 		// The disassembled string will contain [error] inline if the
 		// script doesn't fully parse, so ignore the error here.
 		disbuf, _ := txscript.DisasmString(v.PkScript)
@@ -784,14 +787,21 @@ func createVoutList(mtx *wire.MsgTx, chainParams *chaincfg.Params, filterAddrMap
 		scriptClass, addrs, reqSigs, _ := txscript.ExtractPkScriptAddrs(
 			v.PkScript, chainParams)
 
+		// Encode the addresses while checking if the address passes the
+		// filter when needed.
+		passesFilter := len(filterAddrMap) == 0
 		encodedAddrs := make([]string, len(addrs))
 		for j, addr := range addrs {
-			encodedAddrs[j] = addr.EncodeAddress()
+			encodedAddr := addr.EncodeAddress()
+			encodedAddrs[j] = encodedAddr
 
-			if len(filterAddrMap) > 0 {
-				if _, exists := filterAddrMap[encodedAddrs[j]]; exists {
-					passesFilter = true
-				}
+			// No need to check the map again if the filter already
+			// passes.
+			if passesFilter {
+				continue
+			}
+			if _, exists := filterAddrMap[encodedAddr]; exists {
+				passesFilter = true
 			}
 		}
 
@@ -1518,7 +1528,7 @@ func (state *gbtWorkState) updateBlockTemplate(s *rpcServer, useCoinbaseValue bo
 		// block template doesn't include the coinbase, so the caller
 		// will ultimately create their own coinbase which pays to the
 		// appropriate address(es).
-		blkTemplate, err := NewBlockTemplate(s.server, payAddr)
+		blkTemplate, err := NewBlockTemplate(s.policy, s.server, payAddr)
 		if err != nil {
 			return internalRPCError("Failed to create new block "+
 				"template: "+err.Error(), "")
@@ -2180,15 +2190,15 @@ func handleGetInfo(s *rpcServer, cmd interface{}, closeChan <-chan struct{}) (in
 
 // handleGetMempoolInfo implements the getmempoolinfo command.
 func handleGetMempoolInfo(s *rpcServer, cmd interface{}, closeChan <-chan struct{}) (interface{}, error) {
-	txD := s.server.txMemPool.TxDescs()
+	mempoolTxns := s.server.txMemPool.TxDescs()
 
 	var numBytes int64
-	for _, desc := range txD {
-		numBytes += int64(desc.Tx.MsgTx().SerializeSize())
+	for _, txD := range mempoolTxns {
+		numBytes += int64(txD.Tx.MsgTx().SerializeSize())
 	}
 
 	ret := &btcjson.GetMempoolInfoResult{
-		Size:  int64(len(txD)),
+		Size:  int64(len(mempoolTxns)),
 		Bytes: numBytes,
 	}
 
@@ -2372,7 +2382,7 @@ func handleGetPeerInfo(s *rpcServer, cmd interface{}, closeChan <-chan struct{})
 			Inbound:        statsSnap.Inbound,
 			StartingHeight: statsSnap.StartingHeight,
 			CurrentHeight:  statsSnap.LastBlock,
-			BanScore:       0,
+			BanScore:       int32(p.banScore.Int()),
 			SyncNode:       p == syncPeer,
 		}
 		if p.LastPingNonce() != 0 {
@@ -2404,27 +2414,27 @@ func handleGetRawMempool(s *rpcServer, cmd interface{}, closeChan <-chan struct{
 		mp.RLock()
 		defer mp.RUnlock()
 		for _, desc := range descs {
-			// Calculate the starting and current priority from the
-			// the tx's inputs.  Use zeros if one or more of the
-			// input transactions can't be found for some reason.
-			var startingPriority, currentPriority float64
-			inputTxs, err := mp.fetchInputTransactions(desc.Tx, false)
+			// Calculate the current priority from the the tx's
+			// inputs.  Use zero if one or more of the input
+			// transactions can't be found for some reason.
+			tx := desc.Tx
+			var currentPriority float64
+			inputTxs, err := mp.fetchInputTransactions(tx, false)
 			if err == nil {
-				startingPriority = desc.StartingPriority(inputTxs)
-				currentPriority = desc.CurrentPriority(inputTxs,
-					newestHeight+1)
+				currentPriority = calcPriority(tx.MsgTx(),
+					inputTxs, newestHeight+1)
 			}
 
 			mpd := &btcjson.GetRawMempoolVerboseResult{
-				Size:             int32(desc.Tx.MsgTx().SerializeSize()),
+				Size:             int32(tx.MsgTx().SerializeSize()),
 				Fee:              btcutil.Amount(desc.Fee).ToBTC(),
 				Time:             desc.Added.Unix(),
 				Height:           int64(desc.Height),
-				StartingPriority: startingPriority,
+				StartingPriority: desc.StartingPriority,
 				CurrentPriority:  currentPriority,
 				Depends:          make([]string, 0),
 			}
-			for _, txIn := range desc.Tx.MsgTx().TxIn {
+			for _, txIn := range tx.MsgTx().TxIn {
 				hash := &txIn.PreviousOutPoint.Hash
 				if s.server.txMemPool.haveTransaction(hash) {
 					mpd.Depends = append(mpd.Depends,
@@ -2432,7 +2442,7 @@ func handleGetRawMempool(s *rpcServer, cmd interface{}, closeChan <-chan struct{
 				}
 			}
 
-			result[desc.Tx.Sha().String()] = mpd
+			result[tx.Sha().String()] = mpd
 		}
 
 		return result, nil
@@ -2708,8 +2718,7 @@ func handleGetWorkRequest(s *rpcServer) (interface{}, error) {
 
 		// Choose a payment address at random.
 		payToAddr := cfg.miningAddrs[rand.Intn(len(cfg.miningAddrs))]
-
-		template, err := NewBlockTemplate(s.server, payToAddr)
+		template, err := NewBlockTemplate(s.policy, s.server, payToAddr)
 		if err != nil {
 			context := "Failed to create new block template"
 			return nil, internalRPCError(err.Error(), context)
@@ -3199,6 +3208,15 @@ func handleSearchRawTransactions(s *rpcServer, cmd interface{}, closeChan <-chan
 		return nil, internalRPCError(err.Error(), context)
 	}
 
+	// Normalize the provided filter addresses (if any) to ensure there are
+	// no duplicates.
+	filterAddrMap := make(map[string]struct{})
+	if c.FilterAddrs != nil && len(*c.FilterAddrs) > 0 {
+		for _, addr := range *c.FilterAddrs {
+			filterAddrMap[addr] = struct{}{}
+		}
+	}
+
 	rawTxns := make([]btcjson.SearchRawTransactionsResult, len(addressTxs), len(addressTxs))
 	for i, txReply := range addressTxs {
 		txHash := txReply.Sha.String()
@@ -3222,15 +3240,6 @@ func handleSearchRawTransactions(s *rpcServer, cmd interface{}, closeChan <-chan
 			}
 			blkHashStr = txReply.BlkSha.String()
 			blkHeight = txReply.Height
-		}
-
-		// c.FilterAddrs can be nil, empty or non-empty.  Here we normalize that
-		// to a non-nil array (empty or non-empty) to avoid future nil checks.
-		filterAddrMap := make(map[string]struct{})
-		if c.FilterAddrs != nil && len(*c.FilterAddrs) > 0 {
-			for _, addr := range *c.FilterAddrs {
-				filterAddrMap[addr] = struct{}{}
-			}
 		}
 
 		rawTxn, err := createSearchRawTransactionsResult(s, s.server.chainParams, mtx,
@@ -3518,6 +3527,7 @@ func handleVerifyMessage(s *rpcServer, cmd interface{}, closeChan <-chan struct{
 type rpcServer struct {
 	started      int32
 	shutdown     int32
+	policy       *mining.Policy
 	server       *server
 	authsha      [fastsha256.Size]byte
 	limitauthsha [fastsha256.Size]byte
@@ -3995,8 +4005,9 @@ func genCertPair(certFile, keyFile string) error {
 }
 
 // newRPCServer returns a new instance of the rpcServer struct.
-func newRPCServer(listenAddrs []string, s *server) (*rpcServer, error) {
+func newRPCServer(listenAddrs []string, policy *mining.Policy, s *server) (*rpcServer, error) {
 	rpc := rpcServer{
+		policy:       policy,
 		server:       s,
 		statusLines:  make(map[int]string),
 		workState:    newWorkState(),

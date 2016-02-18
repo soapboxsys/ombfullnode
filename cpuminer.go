@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/blockchain"
+	"github.com/btcsuite/btcd/mining"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 )
@@ -52,6 +53,8 @@ var (
 // system which is typically sufficient.
 type CPUMiner struct {
 	sync.Mutex
+	policy            *mining.Policy
+	txSource          mining.TxSource
 	server            *server
 	numWorkers        uint32
 	started           bool
@@ -183,7 +186,7 @@ func (m *CPUMiner) solveBlock(msgBlock *wire.MsgBlock, blockHeight int32,
 
 	// Initial state.
 	lastGenerated := time.Now()
-	lastTxUpdate := m.server.txMemPool.LastUpdated()
+	lastTxUpdate := m.txSource.LastUpdated()
 	hashesCompleted := uint64(0)
 
 	// Note that the entire extra nonce range is iterated and the offset is
@@ -218,7 +221,7 @@ func (m *CPUMiner) solveBlock(msgBlock *wire.MsgBlock, blockHeight int32,
 				// has been updated since the block template was
 				// generated and it has been at least one
 				// minute.
-				if lastTxUpdate != m.server.txMemPool.LastUpdated() &&
+				if lastTxUpdate != m.txSource.LastUpdated() &&
 					time.Now().After(lastGenerated.Add(time.Minute)) {
 
 					return false
@@ -302,7 +305,7 @@ out:
 		// Create a new block template using the available transactions
 		// in the memory pool as a source of transactions to potentially
 		// include in the block.
-		template, err := NewBlockTemplate(m.server, payToAddr)
+		template, err := NewBlockTemplate(m.policy, m.server, payToAddr)
 		m.submitBlockLock.Unlock()
 		if err != nil {
 			errStr := fmt.Sprintf("Failed to create new block "+
@@ -564,7 +567,7 @@ func (m *CPUMiner) GenerateNBlocks(n uint32) ([]*wire.ShaHash, error) {
 		// Create a new block template using the available transactions
 		// in the memory pool as a source of transactions to potentially
 		// include in the block.
-		template, err := NewBlockTemplate(m.server, payToAddr)
+		template, err := NewBlockTemplate(m.policy, m.server, payToAddr)
 		m.submitBlockLock.Unlock()
 		if err != nil {
 			errStr := fmt.Sprintf("Failed to create new block "+
@@ -599,8 +602,10 @@ func (m *CPUMiner) GenerateNBlocks(n uint32) ([]*wire.ShaHash, error) {
 // newCPUMiner returns a new instance of a CPU miner for the provided server.
 // Use Start to begin the mining process.  See the documentation for CPUMiner
 // type for more details.
-func newCPUMiner(s *server) *CPUMiner {
+func newCPUMiner(policy *mining.Policy, s *server) *CPUMiner {
 	return &CPUMiner{
+		policy:            policy,
+		txSource:          s.txMemPool,
 		server:            s,
 		numWorkers:        defaultNumWorkers,
 		updateNumWorkers:  make(chan struct{}),

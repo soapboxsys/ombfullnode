@@ -12,8 +12,8 @@ import (
 	"github.com/btcsuite/btcd/wire"
 )
 
-// genRandomSig returns a random message, public key, and a signature of the
-// message under the public key. This function is used to generate randomized
+// genRandomSig returns a random message, a signature of the message under the
+// public key and the public key. This function is used to generate randomized
 // test data.
 func genRandomSig() (*wire.ShaHash, *btcec.Signature, *btcec.PublicKey, error) {
 	privKey, err := btcec.NewPrivateKey(btcec.S256())
@@ -88,7 +88,7 @@ func TestSigCacheAddEvictEntry(t *testing.T) {
 	}
 
 	// Add a new entry, this should cause eviction of a randomly chosen
-	// previously entry.
+	// previous entry.
 	msgNew, sigNew, keyNew, err := genRandomSig()
 	if err != nil {
 		t.Fatalf("unable to generate random signature test data")

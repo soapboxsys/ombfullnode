@@ -1,4 +1,4 @@
-// Copyright (c) 2013-2015 The btcsuite developers
+// Copyright (c) 2013-2016 The btcsuite developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -23,6 +23,7 @@ import (
 	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/database"
+	"github.com/btcsuite/btcd/mining"
 	"github.com/btcsuite/btcd/peer"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
@@ -48,7 +49,7 @@ const (
 	// connectionRetryInterval is the base amount of time to wait in between
 	// retries when connecting to persistent peers.  It is adjusted by the
 	// number of retries such that there is a retry backoff.
-	connectionRetryInterval = time.Second * 10
+	connectionRetryInterval = time.Second * 5
 
 	// maxConnectionRetryInterval is the max amount of time retrying of a
 	// persistent peer is allowed to grow to.  This is necessary since the
@@ -165,14 +166,15 @@ func (ps *peerState) forAllPeers(closure func(sp *serverPeer)) {
 // server provides a bitcoin server for handling communications to and from
 // bitcoin peers.
 type server struct {
+	// The following variables must only be used atomically.
+	started       int32
+	shutdown      int32
+	shutdownSched int32
+	bytesReceived uint64 // Total bytes received from all peers since start.
+	bytesSent     uint64 // Total bytes sent by all peers since start.
+
 	listeners            []net.Listener
 	chainParams          *chaincfg.Params
-	started              int32      // atomic
-	shutdown             int32      // atomic
-	shutdownSched        int32      // atomic
-	bytesMutex           sync.Mutex // For the following two fields.
-	bytesReceived        uint64     // Total bytes received from all peers since start.
-	bytesSent            uint64     // Total bytes sent by all peers since start.
 	addrManager          *addrmgr.AddrManager
 	sigCache             *txscript.SigCache
 	rpcServer            *rpcServer
@@ -180,6 +182,7 @@ type server struct {
 	addrIndexer          *addrIndexer
 	txMemPool            *txMemPool
 	cpuMiner             *CPUMiner
+	relayNtfnChan        chan *btcutil.Tx
 	modifyRebroadcastInv chan interface{}
 	pendingPeers         chan *serverPeer
 	newPeers             chan *serverPeer
@@ -217,8 +220,8 @@ type serverPeer struct {
 	requestedBlocks map[wire.ShaHash]struct{}
 	filter          *bloom.Filter
 	knownAddresses  map[string]struct{}
+	banScore        dynamicBanScore
 	quit            chan struct{}
-
 	// The following chans are used to sync blockmanager and server.
 	txProcessed    chan struct{}
 	blockProcessed chan struct{}
@@ -291,6 +294,40 @@ func (sp *serverPeer) pushAddrMsg(addresses []*wire.NetAddress) {
 	sp.addKnownAddresses(known)
 }
 
+// addBanScore increases the persistent and decaying ban score fields by the
+// values passed as parameters. If the resulting score exceeds half of the ban
+// threshold, a warning is logged including the reason provided. Further, if
+// the score is above the ban threshold, the peer will be banned and
+// disconnected.
+func (sp *serverPeer) addBanScore(persistent, transient uint32, reason string) {
+	// No warning is logged and no score is calculated if banning is disabled.
+	if cfg.DisableBanning {
+		return
+	}
+	warnThreshold := cfg.BanThreshold >> 1
+	if transient == 0 && persistent == 0 {
+		// The score is not being increased, but a warning message is still
+		// logged if the score is above the warn threshold.
+		score := sp.banScore.Int()
+		if score > warnThreshold {
+			peerLog.Warnf("Misbehaving peer %s: %s -- ban score is %d, "+
+				"it was not increased this time", sp, reason, score)
+		}
+		return
+	}
+	score := sp.banScore.Increase(persistent, transient)
+	if score > warnThreshold {
+		peerLog.Warnf("Misbehaving peer %s: %s -- ban score increased to %d",
+			sp, reason, score)
+		if score > cfg.BanThreshold {
+			peerLog.Warnf("Misbehaving peer %s -- banning and disconnecting",
+				sp)
+			sp.server.BanPeer(sp)
+			sp.Disconnect()
+		}
+	}
+}
+
 // OnVersion is invoked when a peer receives a version bitcoin message
 // and is used to negotiate the protocol version details as well as kick start
 // the communications.
@@ -359,9 +396,15 @@ func (sp *serverPeer) OnVersion(p *peer.Peer, msg *wire.MsgVersion) {
 // pool up to the maximum inventory allowed per message.  When the peer has a
 // bloom filter loaded, the contents are filtered accordingly.
 func (sp *serverPeer) OnMemPool(p *peer.Peer, msg *wire.MsgMemPool) {
+	// A decaying ban score increase is applied to prevent flooding.
+	// The ban score accumulates and passes the ban threshold if a burst of
+	// mempool messages comes from a peer. The score decays each minute to
+	// half of its value.
+	sp.addBanScore(0, 33, "mempool")
+
 	// Generate inventory message with the available transactions in the
 	// transaction memory pool.  Limit it to the max allowed inventory
-	// per message.  The the NewMsgInvSizeHint function automatically limits
+	// per message.  The NewMsgInvSizeHint function automatically limits
 	// the passed hint to the maximum allowed, so it's safe to pass it
 	// without double checking it here.
 	txMemPool := sp.server.txMemPool
@@ -461,6 +504,16 @@ func (sp *serverPeer) OnGetData(p *peer.Peer, msg *wire.MsgGetData) {
 	numAdded := 0
 	notFound := wire.NewMsgNotFound()
 
+	length := len(msg.InvList)
+	// A decaying ban score increase is applied to prevent exhausting resources
+	// with unusually large inventory queries.
+	// Requesting more than the maximum inventory vector length within a short
+	// period of time yields a score above the default ban threshold. Sustained
+	// bursts of small requests are not penalized as that would potentially ban
+	// peers performing IBD.
+	// This incremental score decays each minute to half of its value.
+	sp.addBanScore(0, uint32(length)*99/wire.MaxInvPerMsg, "getdata")
+
 	// We wait on this wait channel periodically to prevent queueing
 	// far more data than we can send in a reasonable time, wasting memory.
 	// The waiting occurs after the database fetch for the next one to
@@ -471,7 +524,7 @@ func (sp *serverPeer) OnGetData(p *peer.Peer, msg *wire.MsgGetData) {
 	for i, iv := range msg.InvList {
 		var c chan struct{}
 		// If this will be the last message we send.
-		if i == len(msg.InvList)-1 && len(notFound.InvList) == 0 {
+		if i == length-1 && len(notFound.InvList) == 0 {
 			c = doneChan
 		} else if (i+1)%3 == 0 {
 			// Buffered so as to not make the send goroutine block.
@@ -1038,9 +1091,8 @@ func (s *server) handleAddPeerMsg(state *peerState, sp *serverPeer) bool {
 
 	// Ignore new peers if we're shutting down.
 	if atomic.LoadInt32(&s.shutdown) != 0 {
-		srvrLog.Infof("New peer %s ignored - server is shutting "+
-			"down", sp)
-		sp.Shutdown()
+		srvrLog.Infof("New peer %s ignored - server is shutting down", sp)
+		sp.Disconnect()
 		return false
 	}
 
@@ -1048,14 +1100,14 @@ func (s *server) handleAddPeerMsg(state *peerState, sp *serverPeer) bool {
 	host, _, err := net.SplitHostPort(sp.Addr())
 	if err != nil {
 		srvrLog.Debugf("can't split hostport %v", err)
-		sp.Shutdown()
+		sp.Disconnect()
 		return false
 	}
 	if banEnd, ok := state.banned[host]; ok {
 		if time.Now().Before(banEnd) {
-			srvrLog.Debugf("Peer %s is banned for another %v - "+
-				"disconnecting", host, banEnd.Sub(time.Now()))
-			sp.Shutdown()
+			srvrLog.Debugf("Peer %s is banned for another %v - disconnecting",
+				host, banEnd.Sub(time.Now()))
+			sp.Disconnect()
 			return false
 		}
 
@@ -1070,16 +1122,16 @@ func (s *server) handleAddPeerMsg(state *peerState, sp *serverPeer) bool {
 		if state.OutboundCount() >= state.maxOutboundPeers {
 			srvrLog.Infof("Max outbound peers reached [%d] - disconnecting "+
 				"peer %s", state.maxOutboundPeers, sp)
-			sp.Shutdown()
+			sp.Disconnect()
 			return false
 		}
 	}
 
 	// Limit max number of total peers.
 	if state.Count() >= cfg.MaxPeers {
-		srvrLog.Infof("Max peers reached [%d] - disconnecting "+
-			"peer %s", cfg.MaxPeers, sp)
-		sp.Shutdown()
+		srvrLog.Infof("Max peers reached [%d] - disconnecting peer %s",
+			cfg.MaxPeers, sp)
+		sp.Disconnect()
 		// TODO(oga) how to handle permanent peers here?
 		// they should be rescheduled.
 		return false
@@ -1120,27 +1172,24 @@ func (s *server) handleDonePeerMsg(state *peerState, sp *serverPeer) {
 	} else {
 		list = state.outboundPeers
 	}
-	for id, e := range list {
-		if e == sp {
-			// Issue an asynchronous reconnect if the peer was a
-			// persistent outbound connection.
-			if !sp.Inbound() && sp.persistent && atomic.LoadInt32(&s.shutdown) == 0 {
-				// Retry peer
-				sp = s.newOutboundPeer(sp.Addr(), sp.persistent)
-				if sp != nil {
-					go s.retryConn(sp, connectionRetryInterval/2)
-				}
-				list[id] = sp
-				return
+	if _, ok := list[sp.ID()]; ok {
+		// Issue an asynchronous reconnect if the peer was a
+		// persistent outbound connection.
+		if !sp.Inbound() && sp.persistent && atomic.LoadInt32(&s.shutdown) == 0 {
+			// Retry peer
+			sp2 := s.newOutboundPeer(sp.Addr(), sp.persistent)
+			if sp2 != nil {
+				go s.retryConn(sp2, false)
 			}
-			if !sp.Inbound() && sp.VersionKnown() {
-				state.outboundGroups[addrmgr.GroupKey(sp.NA())]--
-			}
-			delete(list, id)
-			srvrLog.Debugf("Removed peer %s", sp)
-			return
 		}
+		if !sp.Inbound() && sp.VersionKnown() {
+			state.outboundGroups[addrmgr.GroupKey(sp.NA())]--
+		}
+		delete(list, sp.ID())
+		srvrLog.Debugf("Removed peer %s", sp)
+		return
 	}
+
 	// Update the address' last seen time if the peer has acknowledged
 	// our version and has sent us its version as well.
 	if sp.VerAckReceived() && sp.VersionKnown() && sp.NA() != nil {
@@ -1405,6 +1454,7 @@ func newPeerConfig(sp *serverPeer) *peer.Config {
 		UserAgentVersion: userAgentVersion,
 		ChainParams:      sp.server.chainParams,
 		Services:         sp.server.services,
+		DisableRelayTx:   false,
 	}
 }
 
@@ -1417,15 +1467,19 @@ func (s *server) listenHandler(listener net.Listener) {
 		if err != nil {
 			// Only log the error if we're not forcibly shutting down.
 			if atomic.LoadInt32(&s.shutdown) == 0 {
-				srvrLog.Errorf("can't accept connection: %v",
-					err)
+				srvrLog.Errorf("Can't accept connection: %v", err)
 			}
 			continue
 		}
 		sp := newServerPeer(s, false)
-		sp.Peer = peer.NewInboundPeer(newPeerConfig(sp), conn)
-		sp.Start()
+		sp.Peer = peer.NewInboundPeer(newPeerConfig(sp))
 		go s.peerDoneHandler(sp)
+		if err := sp.Connect(conn); err != nil {
+			if atomic.LoadInt32(&s.shutdown) == 0 {
+				srvrLog.Errorf("Can't accept connection: %v", err)
+			}
+			continue
+		}
 	}
 	s.wg.Done()
 	srvrLog.Tracef("Listener handler done for %s", listener.Addr())
@@ -1484,7 +1538,7 @@ func (s *server) newOutboundPeer(addr string, persistent bool) *serverPeer {
 	sp := newServerPeer(s, persistent)
 	p, err := peer.NewOutboundPeer(newPeerConfig(sp), addr)
 	if err != nil {
-		srvrLog.Errorf("Cannot create outbound peer: %v", err)
+		srvrLog.Errorf("Cannot create outbound peer %s: %v", addr, err)
 		return nil
 	}
 	sp.Peer = p
@@ -1497,14 +1551,14 @@ func (s *server) peerConnHandler(sp *serverPeer) {
 	err := s.establishConn(sp)
 	if err != nil {
 		srvrLog.Debugf("Failed to connect to %s: %v", sp.Addr(), err)
-		s.donePeers <- sp
+		sp.Disconnect()
 	}
 }
 
 // peerDoneHandler handles peer disconnects by notifiying the server that it's
 // done.
 func (s *server) peerDoneHandler(sp *serverPeer) {
-	sp.WaitForShutdown()
+	sp.WaitForDisconnect()
 	s.donePeers <- sp
 
 	// Only tell block manager we are gone if we ever told it we existed.
@@ -1529,22 +1583,36 @@ func (s *server) establishConn(sp *serverPeer) error {
 	return nil
 }
 
-// retryConn retries connection to the peer after the given duration.
-func (s *server) retryConn(sp *serverPeer, retryDuration time.Duration) {
-	srvrLog.Debugf("Retrying connection to %s in %s", sp.Addr(), retryDuration)
-	select {
-	case <-time.After(retryDuration):
-		err := s.establishConn(sp)
-		if err != nil {
-			retryDuration += connectionRetryInterval / 2
-			if retryDuration > maxConnectionRetryInterval {
-				retryDuration = maxConnectionRetryInterval
+// retryConn retries connection to the peer after the given duration.  It must
+// be run as a goroutine.
+func (s *server) retryConn(sp *serverPeer, initialAttempt bool) {
+	retryDuration := connectionRetryInterval
+	for {
+		if initialAttempt {
+			retryDuration = 0
+			initialAttempt = false
+		} else {
+			srvrLog.Debugf("Retrying connection to %s in %s", sp.Addr(),
+				retryDuration)
+		}
+		select {
+		case <-time.After(retryDuration):
+			err := s.establishConn(sp)
+			if err != nil {
+				retryDuration += connectionRetryInterval
+				if retryDuration > maxConnectionRetryInterval {
+					retryDuration = maxConnectionRetryInterval
+				}
+				continue
 			}
-			go s.retryConn(sp, retryDuration)
+			return
+
+		case <-sp.quit:
+			return
+
+		case <-s.quit:
 			return
 		}
-	case <-sp.quit:
-	case <-s.quit:
 	}
 }
 
@@ -1588,7 +1656,7 @@ func (s *server) peerHandler() {
 	for _, addr := range permanentPeers {
 		sp := s.newOutboundPeer(addr, true)
 		if sp != nil {
-			go s.peerConnHandler(sp)
+			go s.retryConn(sp, true)
 		}
 	}
 
@@ -1630,11 +1698,11 @@ out:
 		case qmsg := <-s.query:
 			s.handleQuery(state, qmsg)
 
-		// Shutdown the peer handler.
 		case <-s.quit:
-			// Shutdown peers.
+			// Disconnect all peers on server shutdown.
 			state.forAllPeers(func(sp *serverPeer) {
-				sp.Shutdown()
+				srvrLog.Tracef("Shutdown peer %s", sp)
+				sp.Disconnect()
 			})
 			break out
 		}
@@ -1651,7 +1719,8 @@ out:
 		if !state.NeedMoreOutbound() || len(cfg.ConnectPeers) > 0 ||
 			atomic.LoadInt32(&s.shutdown) != 0 {
 			state.forPendingPeers(func(sp *serverPeer) {
-				sp.Shutdown()
+				srvrLog.Tracef("Shutdown peer %s", sp)
+				sp.Disconnect()
 			})
 			continue
 		}
@@ -1723,6 +1792,23 @@ out:
 	s.blockManager.Stop()
 	s.pubRecManager.Stop()
 	s.addrManager.Stop()
+
+	// Drain channels before exiting so nothing is left waiting around
+	// to send.
+cleanup:
+	for {
+		select {
+		case <-s.newPeers:
+		case <-s.donePeers:
+		case <-s.peerHeightsUpdate:
+		case <-s.relayInv:
+		case <-s.broadcast:
+		case <-s.wakeup:
+		case <-s.query:
+		default:
+			break cleanup
+		}
+	}
 	s.wg.Done()
 	srvrLog.Tracef("Peer handler done")
 }
@@ -1846,28 +1932,20 @@ func (s *server) ConnectNode(addr string, permanent bool) error {
 // AddBytesSent adds the passed number of bytes to the total bytes sent counter
 // for the server.  It is safe for concurrent access.
 func (s *server) AddBytesSent(bytesSent uint64) {
-	s.bytesMutex.Lock()
-	defer s.bytesMutex.Unlock()
-
-	s.bytesSent += bytesSent
+	atomic.AddUint64(&s.bytesSent, bytesSent)
 }
 
 // AddBytesReceived adds the passed number of bytes to the total bytes received
 // counter for the server.  It is safe for concurrent access.
 func (s *server) AddBytesReceived(bytesReceived uint64) {
-	s.bytesMutex.Lock()
-	defer s.bytesMutex.Unlock()
-
-	s.bytesReceived += bytesReceived
+	atomic.AddUint64(&s.bytesReceived, bytesReceived)
 }
 
 // NetTotals returns the sum of all bytes received and sent across the network
 // for all peers.  It is safe for concurrent access.
 func (s *server) NetTotals() (uint64, uint64) {
-	s.bytesMutex.Lock()
-	defer s.bytesMutex.Unlock()
-
-	return s.bytesReceived, s.bytesSent
+	return atomic.LoadUint64(&s.bytesReceived),
+		atomic.LoadUint64(&s.bytesSent)
 }
 
 // UpdatePeerHeights updates the heights of all peers who have have announced
@@ -1893,6 +1971,20 @@ func (s *server) rebroadcastHandler() {
 out:
 	for {
 		select {
+		case tx := <-s.relayNtfnChan:
+			// Generate an inv and relay it.
+			inv := wire.NewInvVect(wire.InvTypeTx, tx.Sha())
+			s.RelayInventory(inv, tx)
+
+			if s.rpcServer != nil {
+				// Notify websocket clients about mempool transactions.
+				s.rpcServer.ntfnMgr.NotifyMempoolTx(tx, true)
+
+				// Potentially notify any getblocktemplate long poll clients
+				// about stale block templates due to the new transaction.
+				s.rpcServer.gbtWorkState.NotifyMempoolTx(s.txMemPool.LastUpdated())
+			}
+
 		case riv := <-s.modifyRebroadcastInv:
 			switch msg := riv.(type) {
 			// Incoming InvVects are added to our map of RPC txs.
@@ -2316,6 +2408,7 @@ func newServer(listenAddrs []string, db database.Db, chainParams *chaincfg.Param
 		relayInv:             make(chan relayMsg, cfg.MaxPeers),
 		broadcast:            make(chan broadcastMsg, cfg.MaxPeers),
 		quit:                 make(chan struct{}),
+		relayNtfnChan:        make(chan *btcutil.Tx, cfg.MaxPeers),
 		modifyRebroadcastInv: make(chan interface{}),
 		peerHeightsUpdate:    make(chan updatePeerHeightsMsg),
 		nat:                  nat,
@@ -2335,8 +2428,30 @@ func newServer(listenAddrs []string, db database.Db, chainParams *chaincfg.Param
 		return nil, err
 	}
 
-	s.txMemPool = newTxMemPool(&s)
-	s.cpuMiner = newCPUMiner(&s)
+	txC := mempoolConfig{
+		DisableRelayPriority:  cfg.NoRelayPriority,
+		EnableAddrIndex:       cfg.AddrIndex,
+		FetchTransactionStore: s.blockManager.blockChain.FetchTransactionStore,
+		FreeTxRelayLimit:      cfg.FreeTxRelayLimit,
+		MaxOrphanTxs:          cfg.MaxOrphanTxs,
+		MinRelayTxFee:         cfg.minRelayTxFee,
+		NewestSha:             s.db.NewestSha,
+		RelayNtfnChan:         s.relayNtfnChan,
+		SigCache:              s.sigCache,
+		TimeSource:            s.timeSource,
+	}
+	s.txMemPool = newTxMemPool(&txC)
+
+	// Create the mining policy based on the configuration options.
+	// NOTE: The CPU miner relies on the mempool, so the mempool has to be
+	// created before calling the function to create the CPU miner.
+	policy := mining.Policy{
+		BlockMinSize:      cfg.BlockMinSize,
+		BlockMaxSize:      cfg.BlockMaxSize,
+		BlockPrioritySize: cfg.BlockPrioritySize,
+		TxMinFreeFee:      cfg.minRelayTxFee,
+	}
+	s.cpuMiner = newCPUMiner(&policy, &s)
 
 	if cfg.AddrIndex {
 		ai, err := newAddrIndexer(&s)
@@ -2347,7 +2462,7 @@ func newServer(listenAddrs []string, db database.Db, chainParams *chaincfg.Param
 	}
 
 	if !cfg.DisableRPC {
-		s.rpcServer, err = newRPCServer(cfg.RPCListeners, &s)
+		s.rpcServer, err = newRPCServer(cfg.RPCListeners, &policy, &s)
 		if err != nil {
 			return nil, err
 		}
