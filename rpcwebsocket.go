@@ -1,4 +1,4 @@
-// Copyright (c) 2013-2015 The btcsuite developers
+// Copyright (c) 2013-2016 The btcsuite developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -14,9 +14,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"sync"
 	"time"
 
+	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/database"
 	"github.com/btcsuite/btcd/txscript"
@@ -31,7 +33,7 @@ const (
 	// websocketSendBufferSize is the number of elements the send channel
 	// can queue before blocking.  Note that this only applies to requests
 	// handled directly in the websocket client input handler or the async
-	// handler since notifications have their own queueing mechanism
+	// handler since notifications have their own queuing mechanism
 	// independent of the send channel buffer.
 	websocketSendBufferSize = 50
 )
@@ -67,7 +69,7 @@ var wsHandlersBeforeInit = map[string]wsCommandHandler{
 // operations to run concurrently (and one at a time) while still responding
 // to the majority of normal requests which can be answered quickly.
 var wsAsyncHandlers = map[string]struct{}{
-	"rescan": struct{}{},
+	"rescan": {},
 }
 
 // WebsocketHandler handles a new websocket client by creating a new wsClient,
@@ -197,7 +199,7 @@ func (m *wsNotificationManager) queueHandler() {
 func (m *wsNotificationManager) NotifyBlockConnected(block *btcutil.Block) {
 	// As NotifyBlockConnected will be called by the block manager
 	// and the RPC server may no longer be running, use a select
-	// statement to unblock enqueueing the notification once the RPC
+	// statement to unblock enqueuing the notification once the RPC
 	// server has begun shutting down.
 	select {
 	case m.queueNotification <- (*notificationBlockConnected)(block):
@@ -210,7 +212,7 @@ func (m *wsNotificationManager) NotifyBlockConnected(block *btcutil.Block) {
 func (m *wsNotificationManager) NotifyBlockDisconnected(block *btcutil.Block) {
 	// As NotifyBlockDisconnected will be called by the block manager
 	// and the RPC server may no longer be running, use a select
-	// statement to unblock enqueueing the notification once the RPC
+	// statement to unblock enqueuing the notification once the RPC
 	// server has begun shutting down.
 	select {
 	case m.queueNotification <- (*notificationBlockDisconnected)(block):
@@ -230,7 +232,7 @@ func (m *wsNotificationManager) NotifyMempoolTx(tx *btcutil.Tx, isNew bool) {
 
 	// As NotifyMempoolTx will be called by mempool and the RPC server
 	// may no longer be running, use a select statement to unblock
-	// enqueueing the notification once the RPC server has begun
+	// enqueuing the notification once the RPC server has begun
 	// shutting down.
 	select {
 	case m.queueNotification <- n:
@@ -1100,11 +1102,11 @@ out:
 	rpcsLog.Tracef("Websocket client input handler done for %s", c.addr)
 }
 
-// notificationQueueHandler handles the queueing of outgoing notifications for
+// notificationQueueHandler handles the queuing of outgoing notifications for
 // the websocket client.  This runs as a muxer for various sources of input to
-// ensure that queueing up notifications to be sent will not block.  Otherwise,
+// ensure that queuing up notifications to be sent will not block.  Otherwise,
 // slow clients could bog down the other systems (such as the mempool or block
-// manager) which are queueing the data.  The data is passed on to outHandler to
+// manager) which are queuing the data.  The data is passed on to outHandler to
 // actually be written.  It must be run as a goroutine.
 func (c *wsClient) notificationQueueHandler() {
 	ntfnSentChan := make(chan bool, 1) // nonblocking sync
@@ -1391,7 +1393,7 @@ func (c *wsClient) WaitForShutdown() {
 // manager, websocket connection, remote address, and whether or not the client
 // has already been authenticated (via HTTP Basic access authentication).  The
 // returned client is ready to start.  Once started, the client will process
-// incoming and outgoing messages in separate goroutines complete with queueing
+// incoming and outgoing messages in separate goroutines complete with queuing
 // and asynchrous handling for long-running operations.
 func newWebsocketClient(server *rpcServer, conn *websocket.Conn,
 	remoteAddr string, authenticated bool, isAdmin bool) (*wsClient, error) {
@@ -1783,10 +1785,10 @@ func rescanBlock(wsc *wsClient, lookups *rescanKeys, blk *btcutil.Block) {
 // verifies that the new range of blocks is on the same fork as a previous
 // range of blocks.  If this condition does not hold true, the JSON-RPC error
 // for an unrecoverable reorganize is returned.
-func recoverFromReorg(db database.Db, minBlock, maxBlock int32,
+func recoverFromReorg(chain *blockchain.BlockChain, minBlock, maxBlock int32,
 	lastBlock *wire.ShaHash) ([]wire.ShaHash, error) {
 
-	hashList, err := db.FetchHeightRange(minBlock, maxBlock)
+	hashList, err := chain.HeightRange(minBlock, maxBlock)
 	if err != nil {
 		rpcsLog.Errorf("Error looking up block range: %v", err)
 		return nil, &btcjson.RPCError{
@@ -1797,7 +1799,8 @@ func recoverFromReorg(db database.Db, minBlock, maxBlock int32,
 	if lastBlock == nil || len(hashList) == 0 {
 		return hashList, nil
 	}
-	blk, err := db.FetchBlockBySha(&hashList[0])
+
+	blk, err := chain.BlockByHash(&hashList[0])
 	if err != nil {
 		rpcsLog.Errorf("Error looking up possibly reorged block: %v",
 			err)
@@ -1813,7 +1816,7 @@ func recoverFromReorg(db database.Db, minBlock, maxBlock int32,
 	return hashList, nil
 }
 
-// descendantBlock returns the appropiate JSON-RPC error if a current block
+// descendantBlock returns the appropriate JSON-RPC error if a current block
 // fetched during a reorganize is not a direct child of the parent block hash.
 func descendantBlock(prevHash *wire.ShaHash, curBlock *btcutil.Block) error {
 	curHash := &curBlock.MsgBlock().Header.PrevBlock
@@ -1843,12 +1846,13 @@ func handleRescan(wsc *wsClient, icmd interface{}) (interface{}, error) {
 
 	outpoints := make([]*wire.OutPoint, 0, len(cmd.OutPoints))
 	for i := range cmd.OutPoints {
-		blockHash, err := wire.NewShaHashFromStr(cmd.OutPoints[i].Hash)
+		cmdOutpoint := &cmd.OutPoints[i]
+		blockHash, err := wire.NewShaHashFromStr(cmdOutpoint.Hash)
 		if err != nil {
-			return nil, rpcDecodeHexError(cmd.OutPoints[i].Hash)
+			return nil, rpcDecodeHexError(cmdOutpoint.Hash)
 		}
-		index := cmd.OutPoints[i].Index
-		outpoints = append(outpoints, wire.NewOutPoint(blockHash, index))
+		outpoint := wire.NewOutPoint(blockHash, cmdOutpoint.Index)
+		outpoints = append(outpoints, outpoint)
 	}
 
 	numAddrs := len(cmd.Addresses)
@@ -1916,13 +1920,13 @@ func handleRescan(wsc *wsClient, icmd interface{}) (interface{}, error) {
 		lookups.unspent[*outpoint] = struct{}{}
 	}
 
-	db := wsc.server.server.db
+	chain := wsc.server.chain
 
-	minBlockSha, err := wire.NewShaHashFromStr(cmd.BeginBlock)
+	minBlockHash, err := wire.NewShaHashFromStr(cmd.BeginBlock)
 	if err != nil {
 		return nil, rpcDecodeHexError(cmd.BeginBlock)
 	}
-	minBlock, err := db.FetchBlockHeightBySha(minBlockSha)
+	minBlock, err := chain.BlockHeightByHash(minBlockHash)
 	if err != nil {
 		return nil, &btcjson.RPCError{
 			Code:    btcjson.ErrRPCBlockNotFound,
@@ -1930,13 +1934,13 @@ func handleRescan(wsc *wsClient, icmd interface{}) (interface{}, error) {
 		}
 	}
 
-	maxBlock := database.AllShas
+	maxBlock := int32(math.MaxInt32)
 	if cmd.EndBlock != nil {
-		maxBlockSha, err := wire.NewShaHashFromStr(*cmd.EndBlock)
+		maxBlockHash, err := wire.NewShaHashFromStr(*cmd.EndBlock)
 		if err != nil {
 			return nil, rpcDecodeHexError(*cmd.EndBlock)
 		}
-		maxBlock, err = db.FetchBlockHeightBySha(maxBlockSha)
+		maxBlock, err = chain.BlockHeightByHash(maxBlockHash)
 		if err != nil {
 			return nil, &btcjson.RPCError{
 				Code:    btcjson.ErrRPCBlockNotFound,
@@ -1955,11 +1959,20 @@ func handleRescan(wsc *wsClient, icmd interface{}) (interface{}, error) {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
-	// FetchHeightRange may not return a complete list of block shas for
-	// the given range, so fetch range as many times as necessary.
+	// Instead of fetching all block shas at once, fetch in smaller chunks
+	// to ensure large rescans consume a limited amount of memory.
 fetchRange:
 	for minBlock < maxBlock {
-		hashList, err := db.FetchHeightRange(minBlock, maxBlock)
+		// Limit the max number of hashes to fetch at once to the
+		// maximum number of items allowed in a single inventory.
+		// This value could be higher since it's not creating inventory
+		// messages, but this mirrors the limiting logic used in the
+		// peer-to-peer protocol.
+		maxLoopBlock := maxBlock
+		if maxLoopBlock-minBlock > wire.MaxInvPerMsg {
+			maxLoopBlock = minBlock + wire.MaxInvPerMsg
+		}
+		hashList, err := chain.HeightRange(minBlock, maxLoopBlock)
 		if err != nil {
 			rpcsLog.Errorf("Error looking up block range: %v", err)
 			return nil, &btcjson.RPCError{
@@ -1971,7 +1984,7 @@ fetchRange:
 			// The rescan is finished if no blocks hashes for this
 			// range were successfully fetched and a stop block
 			// was provided.
-			if maxBlock != database.AllShas {
+			if maxBlock != math.MaxInt32 {
 				break
 			}
 
@@ -1987,10 +2000,12 @@ fetchRange:
 			// continuous notifications if necessary.  Otherwise,
 			// continue the fetch loop again to rescan the new
 			// blocks (or error due to an irrecoverable reorganize).
-			pauseGuard := wsc.server.server.blockManager.Pause()
-			curHash, _, err := db.NewestSha()
+			blockManager := wsc.server.server.blockManager
+			pauseGuard := blockManager.Pause()
+			best := blockManager.chain.BestSnapshot()
+			curHash := best.Hash
 			again := true
-			if err == nil && (lastBlockHash == nil || *lastBlockHash == *curHash) {
+			if lastBlockHash == nil || *lastBlockHash == *curHash {
 				again = false
 				n := wsc.server.ntfnMgr
 				n.RegisterSpentRequests(wsc, lookups.unspentSlice())
@@ -2014,11 +2029,13 @@ fetchRange:
 
 	loopHashList:
 		for i := range hashList {
-			blk, err := db.FetchBlockBySha(&hashList[i])
+			blk, err := chain.BlockByHash(&hashList[i])
 			if err != nil {
 				// Only handle reorgs if a block could not be
 				// found for the hash.
-				if err != database.ErrBlockShaMissing {
+				if dbErr, ok := err.(database.Error); !ok ||
+					dbErr.ErrorCode != database.ErrBlockNotFound {
+
 					rpcsLog.Errorf("Error looking up "+
 						"block: %v", err)
 					return nil, &btcjson.RPCError{
@@ -2030,7 +2047,7 @@ fetchRange:
 
 				// If an absolute max block was specified, don't
 				// attempt to handle the reorg.
-				if maxBlock != database.AllShas {
+				if maxBlock != math.MaxInt32 {
 					rpcsLog.Errorf("Stopping rescan for "+
 						"reorged block %v",
 						cmd.EndBlock)
@@ -2048,8 +2065,8 @@ fetchRange:
 				// before the range was evaluated, as it must be
 				// reevaluated for the new hashList.
 				minBlock += int32(i)
-				hashList, err = recoverFromReorg(db, minBlock,
-					maxBlock, lastBlockHash)
+				hashList, err = recoverFromReorg(chain,
+					minBlock, maxBlock, lastBlockHash)
 				if err != nil {
 					return nil, err
 				}
@@ -2118,7 +2135,7 @@ fetchRange:
 	// is needed to safely inform clients that all rescan notifications have
 	// been sent.
 	n := btcjson.NewRescanFinishedNtfn(lastBlockHash.String(),
-		int32(lastBlock.Height()),
+		lastBlock.Height(),
 		lastBlock.MsgBlock().Header.Timestamp.Unix())
 	if mn, err := btcjson.MarshalCmd(nil, n); err != nil {
 		rpcsLog.Errorf("Failed to marshal rescan finished "+

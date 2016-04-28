@@ -1,4 +1,4 @@
-// Copyright (c) 2013-2014 The btcsuite developers
+// Copyright (c) 2013-2016 The btcsuite developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -34,7 +34,7 @@ func TstTimeSorter(times []time.Time) sort.Interface {
 var TstCheckSerializedHeight = checkSerializedHeight
 
 // TstSetMaxMedianTimeEntries makes the ability to set the maximum number of
-// median tiem entries available to the test package.
+// median time entries available to the test package.
 func TstSetMaxMedianTimeEntries(val int) {
 	maxMedianTimeEntries = val
 }
@@ -42,3 +42,7 @@ func TstSetMaxMedianTimeEntries(val int) {
 // TstCheckBlockScripts makes the internal checkBlockScripts function available
 // to the test package.
 var TstCheckBlockScripts = checkBlockScripts
+
+// TstDeserializeUtxoEntry makes the internal deserializeUtxoEntry function
+// available to the test package.
+var TstDeserializeUtxoEntry = deserializeUtxoEntry

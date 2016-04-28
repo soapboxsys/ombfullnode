@@ -1,4 +1,4 @@
-// Copyright (c) 2013-2014 The btcsuite developers
+// Copyright (c) 2013-2016 The btcsuite developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -17,8 +17,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/database"
-	_ "github.com/btcsuite/btcd/database/ldb"
-	_ "github.com/btcsuite/btcd/database/memdb"
+	_ "github.com/btcsuite/btcd/database/ffldb"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	flags "github.com/btcsuite/go-flags"
@@ -26,37 +25,40 @@ import (
 )
 
 const (
-	defaultConfigFilename    = "node.conf"
-	defaultDataDirname       = "data"
-	defaultLogLevel          = "info"
-	defaultLogDirname        = "logs"
-	defaultLogFilename       = "node.log"
-	defaultMaxPeers          = 125
-	defaultBanDuration       = time.Hour * 24
-	defaultBanThreshold      = 100
-	defaultMaxRPCClients     = 10
-	defaultMaxRPCWebsockets  = 25
-	defaultVerifyEnabled     = false
-	defaultDbType            = "leveldb"
-	defaultFreeTxRelayLimit  = 15.0
-	defaultBlockMinSize      = 0
-	defaultBlockMaxSize      = 750000
-	blockMaxSizeMin          = 1000
-	blockMaxSizeMax          = wire.MaxBlockPayload - 1000
-	defaultBlockPrioritySize = 50000
-	defaultGenerate          = false
-	defaultAddrIndex         = false
-	defaultSigCacheMaxSize   = 50000
+	defaultConfigFilename        = "node.conf"
+	defaultDataDirname           = "data"
+	defaultLogLevel              = "info"
+	defaultLogDirname            = "logs"
+	defaultLogFilename           = "node.log"
+	defaultMaxPeers              = 125
+	defaultBanDuration           = time.Hour * 24
+	defaultBanThreshold          = 100
+	defaultMaxRPCClients         = 10
+	defaultMaxRPCWebsockets      = 25
+	defaultVerifyEnabled         = false
+	defaultDbType                = "ffldb"
+	defaultFreeTxRelayLimit      = 15.0
+	defaultBlockMinSize          = 0
+	defaultBlockMaxSize          = 750000
+	blockMaxSizeMin              = 1000
+	blockMaxSizeMax              = wire.MaxBlockPayload - 1000
+	defaultBlockPrioritySize     = 50000
+	defaultGenerate              = false
+	defaultMaxOrphanTransactions = 1000
+	defaultMaxOrphanTxSize       = 5000
+	defaultSigCacheMaxSize       = 100000
+	defaultTxIndex               = false
+	defaultAddrIndex             = false
 )
 
 var (
-	ombHomeDir         = btcutil.AppDataDir("ombnode", false)
-	defaultConfigFile  = filepath.Join(ombHomeDir, defaultConfigFilename)
-	defaultDataDir     = filepath.Join(ombHomeDir, defaultDataDirname)
-	knownDbTypes       = database.SupportedDBs()
-	defaultRPCKeyFile  = filepath.Join(ombHomeDir, "rpc.key")
-	defaultRPCCertFile = filepath.Join(ombHomeDir, "rpc.cert")
-	defaultLogDir      = filepath.Join(ombHomeDir, defaultLogDirname)
+	btcdHomeDir        = btcutil.AppDataDir("ombnode", false)
+	defaultConfigFile  = filepath.Join(btcdHomeDir, defaultConfigFilename)
+	defaultDataDir     = filepath.Join(btcdHomeDir, defaultDataDirname)
+	knownDbTypes       = database.SupportedDrivers()
+	defaultRPCKeyFile  = filepath.Join(btcdHomeDir, "rpc.key")
+	defaultRPCCertFile = filepath.Join(btcdHomeDir, "rpc.cert")
+	defaultLogDir      = filepath.Join(btcdHomeDir, defaultLogDirname)
 )
 
 // runServiceCommand is only set to a real function on Windows.  It is used
@@ -128,17 +130,19 @@ type config struct {
 	BlockMaxSize       uint32        `long:"blockmaxsize" description:"Maximum block size in bytes to be used when creating a block"`
 	BlockPrioritySize  uint32        `long:"blockprioritysize" description:"Size in bytes for high-priority/low-fee transactions when creating a block"`
 	GetWorkKeys        []string      `long:"getworkkey" description:"DEPRECATED -- Use the --miningaddr option instead"`
-	AddrIndex          bool          `long:"addrindex" description:"Build and maintain a full address index. Currently only supported by leveldb."`
-	DropAddrIndex      bool          `long:"dropaddrindex" description:"Deletes the address-based transaction index from the database on start up, and then exits."`
-	NoPeerBloomFilters bool          `long:"nopeerbloomfilters" description:"Disable bloom filtering support."`
-	SigCacheMaxSize    uint          `long:"sigcachemaxsize" description:"The maximum number of entries in the signature verification cache."`
-
-	onionlookup   func(string) ([]net.IP, error)
-	lookup        func(string) ([]net.IP, error)
-	oniondial     func(string, string) (net.Conn, error)
-	dial          func(string, string) (net.Conn, error)
-	miningAddrs   []btcutil.Address
-	minRelayTxFee btcutil.Amount
+	NoPeerBloomFilters bool          `long:"nopeerbloomfilters" description:"Disable bloom filtering support"`
+	SigCacheMaxSize    uint          `long:"sigcachemaxsize" description:"The maximum number of entries in the signature verification cache"`
+	BlocksOnly         bool          `long:"blocksonly" description:"Do not accept transactions from remote peers."`
+	TxIndex            bool          `long:"txindex" description:"Maintain a full hash-based transaction index which makes all transactions available via the getrawtransaction RPC"`
+	DropTxIndex        bool          `long:"droptxindex" description:"Deletes the hash-based transaction index from the database on start up and then exits."`
+	AddrIndex          bool          `long:"addrindex" description:"Maintain a full address-based transaction index which makes the searchrawtransactions RPC available"`
+	DropAddrIndex      bool          `long:"dropaddrindex" description:"Deletes the address-based transaction index from the database on start up and then exits."`
+	onionlookup        func(string) ([]net.IP, error)
+	lookup             func(string) ([]net.IP, error)
+	oniondial          func(string, string) (net.Conn, error)
+	dial               func(string, string) (net.Conn, error)
+	miningAddrs        []btcutil.Address
+	minRelayTxFee      btcutil.Amount
 }
 
 // serviceOptions defines the configuration options for btcd as a service on
@@ -152,7 +156,7 @@ type serviceOptions struct {
 func cleanAndExpandPath(path string) string {
 	// Expand initial ~ to OS specific home directory.
 	if strings.HasPrefix(path, "~") {
-		homeDir := filepath.Dir(ombHomeDir)
+		homeDir := filepath.Dir(btcdHomeDir)
 		path = strings.Replace(path, "~", homeDir, 1)
 	}
 
@@ -189,7 +193,7 @@ func supportedSubsystems() []string {
 		subsystems = append(subsystems, subsysID)
 	}
 
-	// Sort the subsytems for stable display.
+	// Sort the subsystems for stable display.
 	sort.Strings(subsystems)
 	return subsystems
 }
@@ -341,9 +345,10 @@ func loadConfig() (*config, []string, error) {
 		BlockMinSize:      defaultBlockMinSize,
 		BlockMaxSize:      defaultBlockMaxSize,
 		BlockPrioritySize: defaultBlockPrioritySize,
+		MaxOrphanTxs:      defaultMaxOrphanTransactions,
 		SigCacheMaxSize:   defaultSigCacheMaxSize,
-		MaxOrphanTxs:      maxOrphanTransactions,
 		Generate:          defaultGenerate,
+		TxIndex:           defaultTxIndex,
 		AddrIndex:         defaultAddrIndex,
 	}
 
@@ -418,7 +423,7 @@ func loadConfig() (*config, []string, error) {
 
 	// Create the home directory if it doesn't already exist.
 	funcName := "loadConfig"
-	err = os.MkdirAll(ombHomeDir, 0700)
+	err = os.MkdirAll(btcdHomeDir, 0700)
 	if err != nil {
 		// Show a nicer error message if it's because a symlink is
 		// linked to a directory that does not exist (probably because
@@ -500,22 +505,6 @@ func loadConfig() (*config, []string, error) {
 		str := "%s: The specified database type [%v] is invalid -- " +
 			"supported types %v"
 		err := fmt.Errorf(str, funcName, cfg.DbType, knownDbTypes)
-		fmt.Fprintln(os.Stderr, err)
-		fmt.Fprintln(os.Stderr, usageMessage)
-		return nil, nil, err
-	}
-
-	if cfg.AddrIndex && cfg.DropAddrIndex {
-		err := fmt.Errorf("addrindex and dropaddrindex cannot be " +
-			"activated at the same")
-		fmt.Fprintln(os.Stderr, err)
-		fmt.Fprintln(os.Stderr, usageMessage)
-		return nil, nil, err
-	}
-
-	// Memdb does not currently support the addrindex.
-	if cfg.DbType == "memdb" && cfg.AddrIndex {
-		err := fmt.Errorf("memdb does not currently support the addrindex")
 		fmt.Fprintln(os.Stderr, err)
 		fmt.Fprintln(os.Stderr, usageMessage)
 		return nil, nil, err
@@ -648,6 +637,38 @@ func loadConfig() (*config, []string, error) {
 	cfg.BlockPrioritySize = minUint32(cfg.BlockPrioritySize, cfg.BlockMaxSize)
 	cfg.BlockMinSize = minUint32(cfg.BlockMinSize, cfg.BlockMaxSize)
 
+	// --txindex and --droptxindex do not mix.
+	if cfg.TxIndex && cfg.DropTxIndex {
+		err := fmt.Errorf("%s: the --txindex and --droptxindex "+
+			"options may  not be activated at the same time",
+			funcName)
+		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, usageMessage)
+		return nil, nil, err
+	}
+
+	// --addrindex and --dropaddrindex do not mix.
+	if cfg.AddrIndex && cfg.DropAddrIndex {
+		err := fmt.Errorf("%s: the --addrindex and --dropaddrindex "+
+			"options may not be activated at the same time",
+			funcName)
+		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, usageMessage)
+		return nil, nil, err
+	}
+
+	// --addrindex and --droptxindex do not mix.
+	if cfg.AddrIndex && cfg.DropTxIndex {
+		err := fmt.Errorf("%s: the --addrindex and --droptxindex "+
+			"options may not be activated at the same time "+
+			"because the address index relies on the transaction "+
+			"index",
+			funcName)
+		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, usageMessage)
+		return nil, nil, err
+	}
+
 	// Check getwork keys are valid and saved parsed versions.
 	cfg.miningAddrs = make([]btcutil.Address, 0, len(cfg.GetWorkKeys)+
 		len(cfg.MiningAddrs))
@@ -716,9 +737,9 @@ func loadConfig() (*config, []string, error) {
 	// addresses.
 	if !cfg.DisableRPC && cfg.DisableTLS {
 		allowedTLSListeners := map[string]struct{}{
-			"localhost": struct{}{},
-			"127.0.0.1": struct{}{},
-			"::1":       struct{}{},
+			"localhost": {},
+			"127.0.0.1": {},
+			"::1":       {},
 		}
 		for _, addr := range cfg.RPCListeners {
 			host, _, err := net.SplitHostPort(addr)

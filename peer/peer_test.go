@@ -379,6 +379,9 @@ func TestPeerListeners(t *testing.T) {
 			OnReject: func(p *peer.Peer, msg *wire.MsgReject) {
 				ok <- msg
 			},
+			OnSendHeaders: func(p *peer.Peer, msg *wire.MsgSendHeaders) {
+				ok <- msg
+			},
 		},
 		UserAgentName:    "peer",
 		UserAgentVersion: "1.0",
@@ -496,8 +499,12 @@ func TestPeerListeners(t *testing.T) {
 		// only one version message is allowed
 		// only one verack message is allowed
 		{
-			"OnMsgReject",
+			"OnReject",
 			wire.NewMsgReject("block", wire.RejectDuplicate, "dupe block"),
+		},
+		{
+			"OnSendHeaders",
+			wire.NewMsgSendHeaders(),
 		},
 	}
 	t.Logf("Running %d tests", len(tests))
@@ -553,7 +560,7 @@ func TestOutboundPeer(t *testing.T) {
 	}
 
 	// Test Queue Inv
-	fakeBlockHash := &wire.ShaHash{0x00, 0x01}
+	fakeBlockHash := &wire.ShaHash{0: 0x00, 1: 0x01}
 	fakeInv := wire.NewInvVect(wire.InvTypeBlock, fakeBlockHash)
 	p.QueueInventory(fakeInv)
 	p.AddKnownInventory(fakeInv)

@@ -4,7 +4,7 @@ ombfullnode
 This is a fork of btcsuite's full node
 [btcd](https://github.com/btcsuite/btcd). 
 Operating instructions can be found in their documentation.
-This fork pulls in releases from btcd.
+This fork pulls in releases from btcd. The last pull was performed on 4-28-2016
 
 ## Requirements
 

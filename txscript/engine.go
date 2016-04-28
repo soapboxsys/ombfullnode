@@ -17,7 +17,7 @@ import (
 type ScriptFlags uint32
 
 const (
-	// ScriptBip16 defines whether the bip16 threshhold has passed and thus
+	// ScriptBip16 defines whether the bip16 threshold has passed and thus
 	// pay-to-script hash transactions will be fully validated.
 	ScriptBip16 ScriptFlags = 1 << iota
 
@@ -564,13 +564,13 @@ func (vm *Engine) SetStack(data [][]byte) {
 	setStack(&vm.dstack, data)
 }
 
-// GetAltStack returns the contents of the primary stack as an array. where the
+// GetAltStack returns the contents of the alternate stack as an array where the
 // last item in the array is the top of the stack.
 func (vm *Engine) GetAltStack() [][]byte {
 	return getStack(&vm.astack)
 }
 
-// SetAltStack sets the contents of the primary stack to the contents of the
+// SetAltStack sets the contents of the alternate stack to the contents of the
 // provided array where the last item in the array will be the top of the stack.
 func (vm *Engine) SetAltStack(data [][]byte) {
 	setStack(&vm.astack, data)

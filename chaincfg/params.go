@@ -337,31 +337,10 @@ var (
 )
 
 var (
-	registeredNets = map[wire.BitcoinNet]struct{}{
-		MainNetParams.Net:       struct{}{},
-		TestNet3Params.Net:      struct{}{},
-		RegressionNetParams.Net: struct{}{},
-		SimNetParams.Net:        struct{}{},
-	}
-
-	pubKeyHashAddrIDs = map[byte]struct{}{
-		MainNetParams.PubKeyHashAddrID:  struct{}{},
-		TestNet3Params.PubKeyHashAddrID: struct{}{}, // shared with regtest
-		SimNetParams.PubKeyHashAddrID:   struct{}{},
-	}
-
-	scriptHashAddrIDs = map[byte]struct{}{
-		MainNetParams.ScriptHashAddrID:  struct{}{},
-		TestNet3Params.ScriptHashAddrID: struct{}{}, // shared with regtest
-		SimNetParams.ScriptHashAddrID:   struct{}{},
-	}
-
-	// Testnet is shared with regtest.
-	hdPrivToPubKeyIDs = map[[4]byte][]byte{
-		MainNetParams.HDPrivateKeyID:  MainNetParams.HDPublicKeyID[:],
-		TestNet3Params.HDPrivateKeyID: TestNet3Params.HDPublicKeyID[:],
-		SimNetParams.HDPrivateKeyID:   SimNetParams.HDPublicKeyID[:],
-	}
+	registeredNets    = make(map[wire.BitcoinNet]struct{})
+	pubKeyHashAddrIDs = make(map[byte]struct{})
+	scriptHashAddrIDs = make(map[byte]struct{})
+	hdPrivToPubKeyIDs = make(map[[4]byte][]byte)
 )
 
 // Register registers the network parameters for a Bitcoin network.  This may
@@ -382,6 +361,14 @@ func Register(params *Params) error {
 	scriptHashAddrIDs[params.ScriptHashAddrID] = struct{}{}
 	hdPrivToPubKeyIDs[params.HDPrivateKeyID] = params.HDPublicKeyID[:]
 	return nil
+}
+
+// mustRegister performs the same function as Register except it panics if there
+// is an error.  This should only be called from package init functions.
+func mustRegister(params *Params) {
+	if err := Register(params); err != nil {
+		panic("failed to register network: " + err.Error())
+	}
 }
 
 // IsPubKeyHashAddrID returns whether the id is an identifier known to prefix a
@@ -441,4 +428,12 @@ func newShaHashFromStr(hexStr string) *wire.ShaHash {
 		panic(err)
 	}
 	return sha
+}
+
+func init() {
+	// Register all default networks when the package is initialized.
+	mustRegister(&MainNetParams)
+	mustRegister(&TestNet3Params)
+	mustRegister(&RegressionNetParams)
+	mustRegister(&SimNetParams)
 }
